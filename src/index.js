@@ -45,7 +45,7 @@ async function main() {
     commands.set(roomCommand.data.name, roomCommand);
     commands.set(templateCommand.data.name, templateCommand);
 
-    if (env.DEBUG_COMMANDS === 'true') {
+    if (env.DEBUG_COMMANDS?.trim() === 'true') {
         commands.set(debugCommand.data.name, debugCommand);
     }
 

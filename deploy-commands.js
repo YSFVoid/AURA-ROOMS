@@ -78,7 +78,7 @@ const commands = [
                 .addStringOption((o) => o.setName('name').setDescription('Template name').setRequired(true).setMaxLength(32)),
         ),
 
-    ...(env.DEBUG_COMMANDS === 'true' ? [
+    ...(env.DEBUG_COMMANDS?.trim() === 'true' ? [
         new SlashCommandBuilder()
             .setName('debug')
             .setDescription('Debug diagnostics (admin only)')
