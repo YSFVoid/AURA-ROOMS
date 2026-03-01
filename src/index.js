@@ -34,8 +34,8 @@ async function main() {
     const abuseService = new AbuseService();
     const auditLogService = new AuditLogService(client);
     const setupService = new SetupService();
-    const roomService = new RoomService(client, permissionService, abuseService, auditLogService);
     const templateService = new TemplateService(permissionService);
+    const roomService = new RoomService(client, permissionService, abuseService, auditLogService, templateService);
 
     const commands = new Collection();
     commands.set(aboutCommand.data.name, aboutCommand);

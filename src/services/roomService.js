@@ -7,13 +7,16 @@ import { interpolateTemplate, sanitizeRoomName } from '../utils/format.js';
 import { logger } from '../utils/logger.js';
 import { runGuildExclusive } from '../utils/guildLock.js';
 import { traceEvent } from '../utils/voiceTracer.js';
+import { buildRoomPanelEmbed, buildRoomPanelComponents } from '../ui/roomPanel.js';
+import { canClaimRoom } from '../utils/permissions.js';
 
 export class RoomService {
-    constructor(client, permissionService, abuseService, auditLogService) {
+    constructor(client, permissionService, abuseService, auditLogService, templateService) {
         this.client = client;
         this.permissionService = permissionService;
         this.abuseService = abuseService;
         this.auditLogService = auditLogService;
+        this.templateService = templateService;
         this.emptyDeleteTimers = new Map();
         this.emptyDeleteDueAt = new Map();
     }
@@ -141,6 +144,10 @@ export class RoomService {
             });
 
             traceEvent(member.guild.id, { userId: member.id, action: 'ROOM_CREATED', toChannelId: roomChannel.id, result: 'success' });
+
+            await this.sendAutoPanel(member, roomChannel).catch((err) =>
+                logger.warn({ error: err, channelId: roomChannel.id }, 'Failed to send auto-panel'),
+            );
         });
     }
 
@@ -388,5 +395,24 @@ export class RoomService {
         } catch {
             return null;
         }
+    }
+
+    async sendAutoPanel(member, roomChannel) {
+        const room = await getByChannel(roomChannel.id);
+        if (!room) return;
+
+        const templates = this.templateService
+            ? await this.templateService.listTemplates(member.guild.id, member.id)
+            : [];
+        const canClaim = canClaimRoom(member, roomChannel, room.ownerId);
+
+        const embed = await buildRoomPanelEmbed(room, roomChannel);
+        const components = await buildRoomPanelComponents({ room, channel: roomChannel, templates, canClaim });
+
+        await roomChannel.send({
+            content: `<@${member.id}> Welcome to your room. Use the controls below to manage it.`,
+            embeds: [embed],
+            components,
+        });
     }
 }

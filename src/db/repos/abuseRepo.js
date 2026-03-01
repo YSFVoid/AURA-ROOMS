@@ -31,19 +31,28 @@ export async function decrementActiveRooms(guildId, userId) {
 export async function recordJoinLeaveEvent(guildId, userId, now, windowMs) {
     const windowStart = new Date(now.getTime() - windowMs);
 
+    await UserAbuseState.findOneAndUpdate(
+        { guildId, userId },
+        { $setOnInsert: { guildId, userId, activeRoomCount: 0 } },
+        { upsert: true },
+    );
+
+    await UserAbuseState.updateOne(
+        { guildId, userId },
+        { $pull: { joinLeaveEvents: { $lt: windowStart } } },
+    );
+
     const state = await UserAbuseState.findOneAndUpdate(
         { guildId, userId },
         {
-            $setOnInsert: { guildId, userId, activeRoomCount: 0 },
             $push: {
                 joinLeaveEvents: {
                     $each: [now],
                     $slice: -SafeLimits.JOIN_LEAVE_EVENTS_CAP,
                 },
             },
-            $pull: { joinLeaveEvents: { $lt: windowStart } },
         },
-        { upsert: true, new: true },
+        { new: true },
     );
 
     if (!state) return 0;
