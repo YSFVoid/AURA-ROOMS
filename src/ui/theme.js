@@ -1,0 +1,67 @@
+export const PurpleOS = {
+    Colors: {
+        PRIMARY: 0x7c3aed,
+        SUCCESS: 0x22c55e,
+        DANGER: 0xef4444,
+        WARNING: 0xf59e0b,
+        SURFACE: 0x1e1b2e,
+        ACCENT: 0xa855f7,
+        MUTED: 0x6b7280,
+    },
+
+    Icons: {
+        LOCK: '🔒',
+        UNLOCK: '🔓',
+        HIDE: '👁️‍🗨️',
+        SHOW: '👁️',
+        CROWN: '👑',
+        GEAR: '⚙️',
+        RENAME: '✏️',
+        LIMIT: '👥',
+        PRIVACY: '🛡️',
+        ACTIVITY: '🎮',
+        LOOP: '🔄',
+        INFO: 'ℹ️',
+        NOTE: '📝',
+        KICK: '🚫',
+        ALLOW: '✅',
+        DENY: '❌',
+        TEMPLATE: '📋',
+        CHANNEL: '🔊',
+        CLOCK: '⏱️',
+        AUTONAME: '🏷️',
+        CHECK: '▸',
+        BULLET: '›',
+        SPARKLE: '✦',
+    },
+
+    Divider: '─────────────────────────────',
+    DividerThin: '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄',
+
+    Labels: {
+        ON: '`ON`',
+        OFF: '`OFF`',
+        NONE: '`—`',
+        INFINITY: '`∞`',
+    },
+
+    Text: {
+        PANEL_TITLE: 'AURA Rooms • PurpleOS',
+        PANEL_SUBTITLE: 'Manage your room with OS-grade controls.',
+        HINT_LOCK: '`💡` Lock blocks new joins. Hide restricts visibility.',
+        HINT_LOG: '`📡` All actions are logged to #aura-logs.',
+        COOLDOWN: 'Slow down • Try again in {s}s.',
+        APPLIED: 'Applied.',
+        SYNCED: 'Synced.',
+        ACCESS_DENIED: 'Access denied.',
+        POLICY_BLOCKED: 'Policy blocked.',
+    },
+
+    Sections: {
+        STATUS: '**▸ ROOM STATUS**',
+        CONTROLS: '**▸ QUICK CONTROLS**',
+        PERMISSIONS: '**▸ PERMISSIONS**',
+        TEMPLATES: '**▸ TEMPLATES**',
+        SYSTEM: '**▸ SYSTEM**',
+    },
+};

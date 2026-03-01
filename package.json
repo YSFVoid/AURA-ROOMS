@@ -1,19 +1,15 @@
-﻿{
+{
   "name": "aura-rooms",
   "version": "1.0.0",
   "description": "AURA Rooms - Temporary Voice Rooms Discord Bot",
   "author": "YSF (Lone wolf developer)",
   "license": "ISC",
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "lint": "eslint src deploy-commands.ts",
-    "format": "prettier --write src deploy-commands.ts",
-    "typecheck": "tsc --noEmit",
-    "deploy": "tsx deploy-commands.ts"
+    "start": "node src/index.js",
+    "deploy": "node deploy-commands.js",
+    "lint": "eslint src deploy-commands.js",
+    "format": "prettier --write src deploy-commands.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
@@ -25,11 +21,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
-    "@types/node": "^22.10.5",
     "eslint": "^9.17.0",
-    "prettier": "^3.4.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3",
-    "typescript-eslint": "^8.19.1"
+    "globals": "^17.3.0",
+    "prettier": "^3.4.2"
   }
 }
