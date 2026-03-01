@@ -1,6 +1,6 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
 import { ChannelNames, Defaults } from '../config/constants.js';
-import { get as getGuildSettings, setCategory, setDefaults, setLimits, setLog, setSetupCompletedAt } from '../db/repos/guildSettingsRepo.js';
+import { get as getGuildSettings, setCategory, setDefaults, setLimits, setLog, setInterfaceChannel, setSetupCompletedAt } from '../db/repos/guildSettingsRepo.js';
 import { add as addLobby, list as listLobbies } from '../db/repos/lobbyRepo.js';
 import { logger } from '../utils/logger.js';
 import { getMissingBotPermissionsNamed } from '../utils/permissions.js';
@@ -73,6 +73,28 @@ export class SetupService {
         });
     }
 
+    async resolveInterfaceChannel(guild, category, configuredInterfaceChannelId) {
+        if (configuredInterfaceChannelId) {
+            const configured = guild.channels.cache.get(configuredInterfaceChannelId);
+            if (configured?.type === ChannelType.GuildText) return configured;
+        }
+
+        const byName = guild.channels.cache
+            .filter((c) => c.type === ChannelType.GuildText && c.name === ChannelNames.INTERFACE)
+            .map((c) => c);
+
+        const inCategory = byName.filter((c) => c.parentId === category.id);
+        const reuse = newestWithWarning(inCategory.length > 0 ? inCategory : byName, guild.id, 'interface-by-name');
+        if (reuse) return reuse;
+
+        return guild.channels.create({
+            name: ChannelNames.INTERFACE,
+            type: ChannelType.GuildText,
+            parent: category.id,
+            reason: 'AURA Rooms setup',
+        });
+    }
+
     async resolveLobbyChannel(guild, category, configuredLobbyId) {
         if (configuredLobbyId) {
             const configured = guild.channels.cache.get(configuredLobbyId);
@@ -114,6 +136,7 @@ export class SetupService {
 
         const category = await this.resolveCategory(guild, settings?.categoryId);
         const logChannel = await this.resolveLogChannel(guild, category, settings?.logChannelId);
+        const interfaceChannel = await this.resolveInterfaceChannel(guild, category, settings?.interfaceChannelId);
         const configuredLobbyCandidates = lobbies
             .map((entry) => guild.channels.cache.get(entry.lobbyChannelId))
             .filter((c) => c?.type === ChannelType.GuildVoice);
@@ -123,6 +146,7 @@ export class SetupService {
         try {
             await setCategory(guild.id, category.id);
             await setLog(guild.id, logChannel.id);
+            await setInterfaceChannel(guild.id, interfaceChannel.id);
             await setDefaults(guild.id, {
                 defaultTemplate: Defaults.NAME_TEMPLATE,
                 defaultPrivacy: Defaults.PRIVACY,
@@ -137,9 +161,9 @@ export class SetupService {
             await addLobby(guild.id, lobbyChannel.id);
         } catch (error) {
             logger.error({ error, guildId: guild.id }, 'Setup DB save failed');
-            return { ok: false, dbSaveFailed: true, category, logChannel, lobbyChannel };
+            return { ok: false, dbSaveFailed: true, category, logChannel, interfaceChannel, lobbyChannel };
         }
 
-        return { ok: true, category, logChannel, lobbyChannel };
+        return { ok: true, category, logChannel, interfaceChannel, lobbyChannel };
     }
 }

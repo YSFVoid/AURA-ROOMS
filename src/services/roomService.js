@@ -19,6 +19,7 @@ export class RoomService {
         this.templateService = templateService;
         this.emptyDeleteTimers = new Map();
         this.emptyDeleteDueAt = new Map();
+        this.deletingRoomIds = new Set();
     }
 
     accessRoles(settings) {
@@ -108,7 +109,7 @@ export class RoomService {
                 traceEvent(member.guild.id, { userId: member.id, action: 'CREATE_ROOM_DONE', toChannelId: roomChannel.id, result: 'success' });
             } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error);
-                logger.warn({ error, guildId: member.guild.id, userId: member.id }, 'Failed to create room');
+                logger.warn({ error, guildId: member.guild.id, userId: member.id }, 'Failed to create channel');
                 traceEvent(member.guild.id, { userId: member.id, action: 'CREATE_ROOM_DONE', result: 'error', reason: msg });
 
                 await this.auditLogService.logEvent(member.guild.id, {
@@ -129,8 +130,31 @@ export class RoomService {
                 const msg = error instanceof Error ? error.message : String(error);
                 logger.warn({ error, memberId: member.id }, 'Failed to move member to new room');
                 traceEvent(member.guild.id, { userId: member.id, action: 'MOVE_MEMBER', toChannelId: roomChannel.id, result: 'error', reason: msg });
+
+                await member.send(`AURA Rooms: Successfully created your channel, but couldn't move you into it automatically. Please join ${roomChannel.toString()}`).catch(() => null);
+            }
+
+            try {
+                await create({
+                    channelId: roomChannel.id,
+                    guildId: member.guild.id,
+                    ownerId: member.id,
+                    privacyMode: settings.defaultPrivacy,
+                    userLimit: settings.defaultUserLimit,
+                    autoNameEnabled: true,
+                    locked: false,
+                    hidden: false,
+                });
+            } catch (error) {
+                logger.error({ error, channelId: roomChannel.id }, 'Fast-move rollback: DB persist failed');
                 await this.rollbackCreatedRoom(member.guild.id, roomChannel.id, member.id);
                 return;
+            }
+
+            try {
+                await this.permissionService.applyPrivacy(roomChannel, settings.defaultPrivacy, member.id, this.accessRoles(settings), { locked: false, hidden: false });
+            } catch (error) {
+                logger.warn({ error, channelId: roomChannel.id }, 'Failed to apply final privacy after fast-move');
             }
 
             await this.abuseService.recordCreateSuccess(member.guild.id, member.id, settings.createCooldownSeconds);
@@ -161,6 +185,20 @@ export class RoomService {
             type: ChannelType.GuildVoice,
             userLimit: settings.defaultUserLimit,
             reason: 'AURA Rooms temporary room creation',
+            permissionOverwrites: [
+                {
+                    id: member.guild.id,
+                    deny: [PermissionFlagsBits.Connect],
+                },
+                {
+                    id: member.id,
+                    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak],
+                },
+                {
+                    id: member.guild.members.me.id,
+                    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MoveMembers],
+                }
+            ],
         };
 
         if (settings.categoryId) {
@@ -172,32 +210,7 @@ export class RoomService {
             }
         }
 
-        const roomChannel = await member.guild.channels.create(createOptions);
-
-        try {
-            await create({
-                channelId: roomChannel.id,
-                guildId: member.guild.id,
-                ownerId: member.id,
-                privacyMode: settings.defaultPrivacy,
-                userLimit: settings.defaultUserLimit,
-                autoNameEnabled: true,
-                locked: false,
-                hidden: false,
-            });
-        } catch (error) {
-            await roomChannel.delete('Rollback: failed to persist temp room').catch(() => null);
-            throw error;
-        }
-
-        try {
-            await this.permissionService.applyPrivacy(roomChannel, settings.defaultPrivacy, member.id, this.accessRoles(settings), { locked: false, hidden: false });
-        } catch (error) {
-            await this.rollbackCreatedRoom(member.guild.id, roomChannel.id, member.id);
-            throw error;
-        }
-
-        return roomChannel;
+        return member.guild.channels.create(createOptions);
     }
 
     cancelEmptyDelete(channelId) {
@@ -261,6 +274,8 @@ export class RoomService {
     }
 
     async deleteRoomIfEmpty(channelId) {
+        if (this.deletingRoomIds.has(channelId)) return;
+
         const room = await getByChannel(channelId);
         if (!room) {
             this.cancelEmptyDelete(channelId);
@@ -274,6 +289,8 @@ export class RoomService {
             this.cancelEmptyDelete(channelId);
             return;
         }
+
+        this.deletingRoomIds.add(channelId);
 
         if (channel && settings.categoryId && channel.parentId !== settings.categoryId) {
             await deleteRoom(channelId);
@@ -305,6 +322,8 @@ export class RoomService {
             details: `Deleted temp room channel ${channelId}`,
             level: 'minimal',
         });
+
+        setTimeout(() => this.deletingRoomIds.delete(channelId), 10000);
     }
 
     async onStartupOrphanCleanup() {
@@ -401,6 +420,9 @@ export class RoomService {
         const room = await getByChannel(roomChannel.id);
         if (!room) return;
 
+        const settings = await ensureDefaults(member.guild.id);
+        const interfaceChannel = member.guild.channels.cache.get(settings.interfaceChannelId);
+
         const templates = this.templateService
             ? await this.templateService.listTemplates(member.guild.id, member.id)
             : [];
@@ -409,10 +431,23 @@ export class RoomService {
         const embed = await buildRoomPanelEmbed(room, roomChannel);
         const components = await buildRoomPanelComponents({ room, channel: roomChannel, templates, canClaim });
 
-        await roomChannel.send({
-            content: `<@${member.id}> Welcome to your room. Use the controls below to manage it.`,
-            embeds: [embed],
-            components,
-        });
+        let message = null;
+        if (interfaceChannel && interfaceChannel.type === ChannelType.GuildText) {
+            message = await interfaceChannel.send({
+                content: `<@${member.id}> Your room is ready.`,
+                embeds: [embed],
+                components,
+            }).catch(() => null);
+        } else {
+            message = await roomChannel.send({
+                content: `<@${member.id}> Welcome to your room. Use the controls below to manage it.`,
+                embeds: [embed],
+                components,
+            }).catch(() => null);
+        }
+
+        if (message) {
+            await updateRoomSettings(room.channelId, { panelMessageId: message.id });
+        }
     }
 }

@@ -30,6 +30,7 @@ const tempRoomSchema = new Schema(
         locked: { type: Boolean, required: true, default: false },
         hidden: { type: Boolean, required: true, default: false },
         note: { type: String, maxlength: SafeLimits.MAX_ROOM_NOTE_LEN },
+        panelMessageId: { type: String },
     },
     { timestamps: false, strict: true },
 );

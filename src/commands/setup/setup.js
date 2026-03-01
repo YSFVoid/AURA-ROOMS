@@ -57,6 +57,7 @@ export const setupCommand = {
                     { name: 'Category', value: result.category?.toString() ?? 'N/A', inline: true },
                     { name: 'Log Channel', value: result.logChannel?.toString() ?? 'N/A', inline: true },
                     { name: 'Lobby', value: result.lobbyChannel?.toString() ?? 'N/A', inline: true },
+                    { name: 'Interface', value: result.interfaceChannel?.toString() ?? 'N/A', inline: true },
                 ]),
             ],
             components: [createSetupActionButtons()],

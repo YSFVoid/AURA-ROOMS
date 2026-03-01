@@ -6,6 +6,7 @@ const guildSettingsSchema = new Schema(
         guildId: { type: String, required: true },
         categoryId: { type: String },
         logChannelId: { type: String },
+        interfaceChannelId: { type: String },
         defaultTemplate: {
             type: String,
             required: true,

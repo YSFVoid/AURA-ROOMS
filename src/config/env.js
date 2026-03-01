@@ -11,6 +11,7 @@ const envSchema = z.object({
         .optional()
         .default('info'),
     NODE_ENV: z.enum(['development', 'production']).optional().default('development'),
+    DEBUG_COMMANDS: z.string().optional().default('false'),
 });
 
 const parsed = envSchema.safeParse(process.env);

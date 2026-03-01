@@ -11,6 +11,7 @@ export const ChannelNames = {
     CATEGORY: 'AURA Rooms',
     LOG: 'aura-logs',
     LOBBY: '➕ Create Room',
+    INTERFACE: 'aura-interface',
 };
 
 export const Colors = {
@@ -30,7 +31,7 @@ export const Defaults = {
     NAME_TEMPLATE: "{displayName}'s room",
     PRIVACY: 'locked',
     USER_LIMIT: 0,
-    EMPTY_DELETE_SECONDS: 30,
+    EMPTY_DELETE_SECONDS: 15,
     CREATE_COOLDOWN_SECONDS: 30,
     MAX_ROOMS_PER_USER: 1,
     JOIN_LEAVE_WINDOW_MS: 10_000,

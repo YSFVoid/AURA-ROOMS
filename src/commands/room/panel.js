@@ -4,6 +4,7 @@ import {
     SlashCommandBuilder,
 } from 'discord.js';
 import { AuditEventTypes, Branding, ComponentIds, Defaults } from '../../config/constants.js';
+import { ChannelType } from 'discord.js';
 import { SafeLimits } from '../../config/safeLimits.js';
 import { ensureDefaults } from '../../db/repos/guildSettingsRepo.js';
 import { transferOwner, updateRoomSettings } from '../../db/repos/roomsRepo.js';
@@ -71,7 +72,33 @@ async function refreshPanel(interaction, appContext) {
     const context = await getRoomContext(interaction);
     const payload = await panelPayload(appContext, context.member, context.channel);
     if (!payload) throw new ValidationError('This channel is not a tracked temp room.');
-    await interaction.update(payload);
+
+    if (interaction.isMessageComponent()) {
+        await interaction.update(payload).catch(() => null);
+    }
+
+    if (context.room.panelMessageId && interaction.message?.id !== context.room.panelMessageId) {
+        await syncInterfacePanel(appContext, context);
+    }
+}
+
+export async function syncInterfacePanel(appContext, context) {
+    if (!context.room.panelMessageId || !context.settings.interfaceChannelId) return;
+
+    const interfaceChannel = context.member.guild.channels.cache.get(context.settings.interfaceChannelId);
+    if (!interfaceChannel || interfaceChannel.type !== ChannelType.GuildText) return;
+
+    const message = await interfaceChannel.messages.fetch(context.room.panelMessageId).catch(() => null);
+    if (!message) return;
+
+    const currentRoom = await appContext.roomService.getTrackedRoom(context.channel.id);
+    if (!currentRoom) return;
+
+    const owner = await context.member.guild.members.fetch(currentRoom.ownerId).catch(() => context.member);
+    const payload = await panelPayload(appContext, owner, context.channel);
+    if (payload) {
+        await message.edit(payload).catch(() => null);
+    }
 }
 
 async function assertUserExistsInGuild(guildMember, userId) {
@@ -410,6 +437,7 @@ export const roomModalHandlers = [
             }
             await appContext.permissionService.rename(context.channel, nextName, context.settings.namingPolicy);
             await updateRoomSettings(context.room.channelId, { lastActiveAt: new Date() });
+            await syncInterfacePanel(appContext, context);
             await interaction.reply({ embeds: [createActionFeedback('Rename', `\`${nextName}\``, getRequestId(interaction))], ephemeral: true });
         },
     },
@@ -426,6 +454,7 @@ export const roomModalHandlers = [
             }
             await appContext.permissionService.setUserLimit(context.channel, limit);
             await updateRoomSettings(context.room.channelId, { userLimit: limit, lastActiveAt: new Date() });
+            await syncInterfacePanel(appContext, context);
             await interaction.reply({ embeds: [createActionFeedback('Limit', limit === 0 ? '∞' : `\`${limit}\``, getRequestId(interaction))], ephemeral: true });
         },
     },
@@ -438,6 +467,7 @@ export const roomModalHandlers = [
             const userId = interaction.fields.getTextInputValue(ComponentIds.ROOM_PERMISSION_INPUT).trim();
             await assertUserExistsInGuild(context.member, userId);
             await appContext.permissionService.allowUser(context.channel, context.room.privacyMode, context.room.ownerId, accessRoleIds(context.settings), userId, { locked: context.room.locked, hidden: context.room.hidden });
+            await syncInterfacePanel(appContext, context);
             await interaction.reply({ embeds: [createActionFeedback('Allow User', `<@${userId}>`, getRequestId(interaction))], ephemeral: true });
         },
     },
@@ -450,6 +480,7 @@ export const roomModalHandlers = [
             const userId = interaction.fields.getTextInputValue(ComponentIds.ROOM_PERMISSION_INPUT).trim();
             await assertUserExistsInGuild(context.member, userId);
             await appContext.permissionService.denyUser(context.channel, context.room.privacyMode, context.room.ownerId, accessRoleIds(context.settings), userId, { locked: context.room.locked, hidden: context.room.hidden });
+            await syncInterfacePanel(appContext, context);
             await interaction.reply({ embeds: [createActionFeedback('Deny User', `<@${userId}>`, getRequestId(interaction))], ephemeral: true });
         },
     },
@@ -462,6 +493,7 @@ export const roomModalHandlers = [
             const roleId = interaction.fields.getTextInputValue(ComponentIds.ROOM_PERMISSION_INPUT).trim();
             assertRoleExistsInGuild(context.member, roleId);
             await appContext.permissionService.allowRole(context.channel, context.room.privacyMode, context.room.ownerId, accessRoleIds(context.settings), roleId, { locked: context.room.locked, hidden: context.room.hidden });
+            await syncInterfacePanel(appContext, context);
             await interaction.reply({ embeds: [createActionFeedback('Allow Role', `<@&${roleId}>`, getRequestId(interaction))], ephemeral: true });
         },
     },
@@ -474,12 +506,13 @@ export const roomModalHandlers = [
             const roleId = interaction.fields.getTextInputValue(ComponentIds.ROOM_PERMISSION_INPUT).trim();
             assertRoleExistsInGuild(context.member, roleId);
             await appContext.permissionService.denyRole(context.channel, context.room.privacyMode, context.room.ownerId, accessRoleIds(context.settings), roleId, { locked: context.room.locked, hidden: context.room.hidden });
+            await syncInterfacePanel(appContext, context);
             await interaction.reply({ embeds: [createActionFeedback('Deny Role', `<@&${roleId}>`, getRequestId(interaction))], ephemeral: true });
         },
     },
     {
         customId: ComponentIds.ROOM_ACTIVITY_MODAL,
-        async execute(interaction) {
+        async execute(interaction, appContext) {
             const context = await getRoomContext(interaction);
             assertScope(context, 'full');
             const value = interaction.fields.getTextInputValue(ComponentIds.ROOM_ACTIVITY_INPUT).trim();
@@ -487,6 +520,7 @@ export const roomModalHandlers = [
                 throw new ValidationError(`Activity must be at most ${SafeLimits.MAX_ACTIVITY_TAG_LEN} characters.`);
             }
             await updateRoomSettings(context.room.channelId, { activityTag: value.length > 0 ? value : undefined, lastActiveAt: new Date() });
+            await syncInterfacePanel(appContext, context);
             await interaction.reply({ embeds: [createActionFeedback('Activity', value || 'Cleared', getRequestId(interaction))], ephemeral: true });
         },
     },

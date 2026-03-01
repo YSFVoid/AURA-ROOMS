@@ -153,6 +153,16 @@ export async function setLog(guildId, logChannelId) {
     );
 }
 
+export async function setInterfaceChannel(guildId, interfaceChannelId) {
+    return withRetries(async () =>
+        GuildSettings.findOneAndUpdate(
+            { guildId },
+            { $set: { guildId, interfaceChannelId } },
+            { upsert: true, new: true },
+        ),
+    );
+}
+
 export async function setDefaults(guildId, payload) {
     const safeTemplate = payload.defaultTemplate
         ? truncate(payload.defaultTemplate, SafeLimits.MAX_NAME_TEMPLATE_LEN)

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { env } from './src/config/env.js';
 import { SafeLimits } from './src/config/safeLimits.js';
 
 const token = process.env.DISCORD_TOKEN;
@@ -77,11 +78,13 @@ const commands = [
                 .addStringOption((o) => o.setName('name').setDescription('Template name').setRequired(true).setMaxLength(32)),
         ),
 
-    new SlashCommandBuilder()
-        .setName('debug')
-        .setDescription('Debug diagnostics (admin only)')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-        .addSubcommand((sub) => sub.setName('voice').setDescription('Show voice flow diagnostics')),
+    ...(env.DEBUG_COMMANDS === 'true' ? [
+        new SlashCommandBuilder()
+            .setName('debug')
+            .setDescription('Debug diagnostics (admin only)')
+            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+            .addSubcommand((sub) => sub.setName('voice').setDescription('Show voice flow diagnostics'))
+    ] : [])
 ];
 
 const rest = new REST({ version: '10' }).setToken(token);

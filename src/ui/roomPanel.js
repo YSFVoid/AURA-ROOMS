@@ -1,12 +1,11 @@
-import { EmbedBuilder } from 'discord.js';
-import { Branding } from '../config/constants.js';
 import { listByChannel } from '../db/repos/permissionsRepo.js';
 import { PurpleOS } from './theme.js';
+import { createPurpleEmbed } from './embeds.js';
 import {
     createRoomControlRowA,
     createRoomControlRowB,
     createRoomKickRow,
-    createRoomPermissionButtons,
+    createRoomPrivacyRow,
     createRoomTemplateRow,
 } from './components.js';
 
@@ -25,7 +24,7 @@ function toggleLabel(value) {
 
 function formatUptime(createdAt) {
     if (!createdAt) return PurpleOS.Labels.NONE;
-    const ms = Date.now() - new Date(createdAt).getTime();
+    const ms = Math.max(0, Date.now() - new Date(createdAt).getTime());
     const totalSeconds = Math.floor(ms / 1000);
     if (totalSeconds < 60) return `\`${totalSeconds}s\``;
     const minutes = Math.floor(totalSeconds / 60);
@@ -36,54 +35,29 @@ function formatUptime(createdAt) {
 }
 
 export async function buildRoomPanelEmbed(room, channel) {
-    const perms = await listByChannel(channel.id);
-    const allowedCount = perms.filter((p) => p.action === 'allow').length;
-    const deniedCount = perms.filter((p) => p.action === 'deny').length;
+    const uptime = formatUptime(room.createdAt);
 
-    const statusLines = [
-        `${PurpleOS.Icons.CHANNEL} **Channel** ${channel.toString()}`,
-        `${PurpleOS.Icons.CROWN} **Owner** <@${room.ownerId}>`,
-        `${PurpleOS.Icons.PRIVACY} **Privacy** ${privacyLabel(room.privacyMode)}`,
-        `${PurpleOS.Icons.LOCK} **Lock** ${toggleLabel(room.locked)}  ${PurpleOS.Icons.BULLET}  ${PurpleOS.Icons.SHOW} **Visibility** ${room.hidden ? '`Hidden`' : '`Visible`'}`,
-        `${PurpleOS.Icons.LIMIT} **Limit** ${limitLabel(room.userLimit)}  ${PurpleOS.Icons.BULLET}  **Members** \`${channel.members.size}\``,
-        `${PurpleOS.Icons.ACTIVITY} **Activity** ${room.activityTag ? `\`${room.activityTag}\`` : PurpleOS.Labels.NONE}`,
-        `${PurpleOS.Icons.AUTONAME} **AutoName** ${toggleLabel(room.autoNameEnabled)}  ${PurpleOS.Icons.BULLET}  ${PurpleOS.Icons.CLOCK} **Uptime** ${formatUptime(room.createdAt)}`,
-    ];
+    return createPurpleEmbed({
+        title: `${PurpleOS.Icons.SPARKLE} ${PurpleOS.Text.PANEL_TITLE}`,
+        subtitle: PurpleOS.Text.PANEL_SUBTITLE,
+        kind: 'PURPLEOS_PRIMARY',
+        fields: [
+            { name: `${PurpleOS.Icons.CHANNEL} Room`, value: channel.toString(), inline: true },
+            { name: `${PurpleOS.Icons.CROWN} Owner`, value: `<@${room.ownerId}>`, inline: true },
+            { name: `${PurpleOS.Icons.PRIVACY} Privacy`, value: privacyLabel(room.privacyMode), inline: true },
 
-    if (room.note) {
-        statusLines.push(`${PurpleOS.Icons.NOTE} **Note** \`${room.note}\``);
-    }
+            { name: `${PurpleOS.Icons.LOCK} Lock`, value: toggleLabel(room.locked), inline: true },
+            { name: `${PurpleOS.Icons.EYE} Visibility`, value: room.hidden ? '`Hidden`' : '`Visible`', inline: true },
+            { name: `${PurpleOS.Icons.LIMIT} Limit`, value: limitLabel(room.userLimit), inline: true },
 
-    const permissionLine = `${PurpleOS.Icons.ALLOW} Allowed \`${allowedCount}\`  ${PurpleOS.Icons.BULLET}  ${PurpleOS.Icons.DENY} Denied \`${deniedCount}\``;
-
-    const sections = [
-        PurpleOS.Sections.STATUS,
-        statusLines.join('\n'),
-        '',
-        PurpleOS.Divider,
-        '',
-        PurpleOS.Sections.PERMISSIONS,
-        permissionLine,
-        '',
-        PurpleOS.DividerThin,
-        '',
-        `-# ${PurpleOS.Text.HINT_LOCK}`,
-        `-# ${PurpleOS.Text.HINT_LOG}`,
-    ];
-
-    return new EmbedBuilder()
-        .setColor(PurpleOS.Colors.PRIMARY)
-        .setTitle(`${PurpleOS.Icons.SPARKLE} ${PurpleOS.Text.PANEL_TITLE}`)
-        .setDescription(sections.join('\n'))
-        .setFooter({ text: Branding.FOOTER })
-        .setTimestamp();
+            { name: `${PurpleOS.Icons.ACTIVITY} Activity`, value: room.activityTag ? `\`${room.activityTag}\`` : PurpleOS.Labels.NONE, inline: true },
+            { name: `${PurpleOS.Icons.AUTONAME} AutoName`, value: toggleLabel(room.autoNameEnabled), inline: true },
+            { name: `${PurpleOS.Icons.CLOCK} Age`, value: uptime, inline: true },
+        ],
+    });
 }
 
 export async function buildRoomPanelComponents(params) {
-    const perms = await listByChannel(params.channel.id);
-    const allowedCount = perms.filter((p) => p.action === 'allow').length;
-    const deniedCount = perms.filter((p) => p.action === 'deny').length;
-
     const kickOptions = params.channel.members
         .filter((member) => !member.user.bot)
         .map((member) => ({
@@ -101,16 +75,14 @@ export async function buildRoomPanelComponents(params) {
     const rows = [
         createRoomControlRowA(params.room.locked, params.room.hidden),
         createRoomControlRowB(params.canClaim),
-        createRoomPermissionButtons(allowedCount, deniedCount),
+        createRoomPrivacyRow(params.room.privacyMode),
     ];
 
-    if (kickOptions.length > 0 || templateOptions.length > 0) {
-        if (kickOptions.length > 0) rows.push(createRoomKickRow(kickOptions));
-        else rows.push(createRoomTemplateRow(templateOptions));
-
-        if (rows.length < 5 && kickOptions.length > 0 && templateOptions.length > 0) {
-            rows.push(createRoomTemplateRow(templateOptions));
-        }
+    if (kickOptions.length > 0) {
+        rows.push(createRoomKickRow(kickOptions));
+    }
+    if (templateOptions.length > 0 && rows.length < 5) {
+        rows.push(createRoomTemplateRow(templateOptions));
     }
 
     return rows;

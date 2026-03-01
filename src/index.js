@@ -44,7 +44,10 @@ async function main() {
     commands.set(importCommand.data.name, importCommand);
     commands.set(roomCommand.data.name, roomCommand);
     commands.set(templateCommand.data.name, templateCommand);
-    commands.set(debugCommand.data.name, debugCommand);
+
+    if (env.DEBUG_COMMANDS === 'true') {
+        commands.set(debugCommand.data.name, debugCommand);
+    }
 
     const buttonHandlers = [
         ...setupButtonHandlers,

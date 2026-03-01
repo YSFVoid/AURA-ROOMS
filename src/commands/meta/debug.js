@@ -31,7 +31,7 @@ async function handleDebugVoice(interaction) {
     const settings = await getGuildSettings(guild.id);
     const lobbies = await listLobbies(guild.id);
     const lobbyIds = lobbies.map((l) => l.lobbyChannelId);
-    const events = getTraceEvents(guild.id, 10);
+    const events = getTraceEvents(guild.id, 15);
 
     const me = guild.members.me;
     const currentVoiceChannel = member.voice?.channelId ?? null;
@@ -79,6 +79,7 @@ async function handleDebugVoice(interaction) {
             { name: 'Guild ID', value: `\`${guild.id}\``, inline: true },
             { name: 'Category ID', value: settings?.categoryId ? `\`${settings.categoryId}\`` : '`not set`', inline: true },
             { name: 'Log Channel', value: settings?.logChannelId ? `\`${settings.logChannelId}\`` : '`not set`', inline: true },
+            { name: 'Interface Channel', value: settings?.interfaceChannelId ? `\`${settings.interfaceChannelId}\`` : '`not set`', inline: true },
             { name: 'Registered Lobbies', value: lobbyIds.length > 0 ? lobbyIds.map((id) => `\`${id}\``).join('\n') : '`none`', inline: false },
             { name: 'Your Voice Channel', value: currentVoiceChannel ? `\`${currentVoiceChannel}\` ${isInLobby ? '✅ IS a lobby' : '❌ NOT a lobby'}` : '`not in voice`', inline: false },
             { name: 'Bot → Category Perms', value: categoryPerms, inline: true },
