@@ -76,6 +76,12 @@ const commands = [
             sub.setName('apply').setDescription('Apply a template to your current temp room')
                 .addStringOption((o) => o.setName('name').setDescription('Template name').setRequired(true).setMaxLength(32)),
         ),
+
+    new SlashCommandBuilder()
+        .setName('debug')
+        .setDescription('Debug diagnostics (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand((sub) => sub.setName('voice').setDescription('Show voice flow diagnostics')),
 ];
 
 const rest = new REST({ version: '10' }).setToken(token);

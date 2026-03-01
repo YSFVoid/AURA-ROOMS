@@ -15,6 +15,7 @@ import { handleInteractionCreate } from './events/interactionCreate.js';
 import { handleVoiceStateUpdate } from './events/voiceStateUpdate.js';
 
 import { aboutCommand } from './commands/meta/about.js';
+import { debugCommand } from './commands/meta/debug.js';
 import { setupCommand, setupButtonHandlers } from './commands/setup/setup.js';
 import { exportCommand } from './commands/config/export.js';
 import { importCommand, importButtonHandlers, importModalHandler } from './commands/config/import.js';
@@ -43,6 +44,7 @@ async function main() {
     commands.set(importCommand.data.name, importCommand);
     commands.set(roomCommand.data.name, roomCommand);
     commands.set(templateCommand.data.name, templateCommand);
+    commands.set(debugCommand.data.name, debugCommand);
 
     const buttonHandlers = [
         ...setupButtonHandlers,
