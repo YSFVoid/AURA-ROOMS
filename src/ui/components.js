@@ -261,31 +261,30 @@ export function createAuraMainGridRows(room, canClaim) {
     return [
         new ActionRowBuilder().addComponents(
             createAuraIconButton({ customId: AuraPanelIds.RENAME, icon: '\u270f\ufe0f' }),
-            createAuraIconButton({ customId: AuraPanelIds.LIMIT, icon: '\u2699\ufe0f' }),
-            createAuraIconButton({
-                customId: AuraPanelIds.LOCK,
-                icon: room.locked ? '\ud83d\udd13' : '\ud83d\udd12',
-            }),
-            createAuraIconButton({
-                customId: AuraPanelIds.HIDE,
-                icon: room.hidden ? '\ud83d\udc41\ufe0f' : '\ud83d\ude48',
-            }),
+            createAuraIconButton({ customId: AuraPanelIds.LOCK, icon: room.locked ? '\ud83d\udd13' : '\ud83d\udd12' }),
+            createAuraIconButton({ customId: AuraPanelIds.LIMIT, icon: '\ud83d\udd10' }),
+            createAuraIconButton({ customId: AuraPanelIds.REFRESH, icon: '\ud83d\udd04' }),
         ),
         new ActionRowBuilder().addComponents(
-            createAuraIconButton({ customId: AuraPanelIds.PRIVACY, icon: '\ud83d\udd10' }),
+            createAuraIconButton({ customId: AuraPanelIds.HIDE, icon: room.hidden ? '\ud83d\udc41\ufe0f' : '\ud83d\ude48' }),
+            createAuraIconButton({ customId: AuraPanelIds.PRIVACY, icon: '\ud83d\udce6' }),
+        ),
+        new ActionRowBuilder().addComponents(
             createAuraIconButton({ customId: AuraPanelIds.ACTIVITY, icon: '\ud83c\udfae' }),
             createAuraIconButton({ customId: AuraPanelIds.AUTONAME, icon: '\ud83d\udd01' }),
-            createAuraIconButton({ customId: AuraPanelIds.KICK_VIEW, icon: '\ud83d\uddd1\ufe0f' }),
+            createAuraIconButton({ customId: AuraPanelIds.KICK_VIEW, icon: '\ud83d\ude80' }),
+            createAuraIconButton({ customId: AuraPanelIds.CLAIM, icon: '\ud83d\udc51', disabled: !canClaim }),
         ),
         new ActionRowBuilder().addComponents(
-            createAuraIconButton({
-                customId: AuraPanelIds.CLAIM,
-                icon: '\ud83d\udc51',
-                disabled: !canClaim,
-            }),
-            createAuraIconButton({ customId: AuraPanelIds.REFRESH, icon: '\ud83d\udd04' }),
-            createAuraIconButton({ customId: AuraPanelIds.PERMISSIONS, icon: '\ud83d\udd10' }),
-            createAuraIconButton({ customId: AuraPanelIds.TEMPLATES, icon: '\ud83d\udce6' }),
+            createAuraIconButton({ customId: AuraPanelIds.PERMISSIONS, icon: '\ud83d\udc65' }),
+            createAuraIconButton({ customId: AuraPanelIds.TEMPLATES, icon: '\ud83d\udcc2' }),
+        ),
+        new ActionRowBuilder().addComponents(
+            createAuraIconButton({ customId: AuraPanelIds.ALLOW_USER, icon: '\ud83d\udc64' }),
+            createAuraIconButton({ customId: AuraPanelIds.DENY_USER, icon: '\ud83d\udeab' }),
+            createAuraIconButton({ customId: AuraPanelIds.ALLOW_ROLE, icon: '\ud83c\udff7\ufe0f' }),
+            createAuraIconButton({ customId: AuraPanelIds.DENY_ROLE, icon: '\u26d4' }),
+            createAuraIconButton({ customId: AuraPanelIds.INFO, icon: '\u2139\ufe0f' }),
         ),
     ];
 }
