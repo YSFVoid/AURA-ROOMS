@@ -13,6 +13,7 @@ const eventOverrides = {
     LOCK_TOGGLED: 'Lock Toggled',
     VISIBILITY_TOGGLED: 'Visibility Toggled',
     TEMPLATE_APPLIED: 'Template Applied',
+    STARTUP_DUPLICATES_CLEANED: 'Startup Duplicates Cleaned',
 };
 
 const decisionOverrides = {

@@ -14,12 +14,14 @@ import { AuditLogService } from './services/auditLogService.js';
 import { handleReady } from './events/ready.js';
 import { handleInteractionCreate } from './events/interactionCreate.js';
 import { handleVoiceStateUpdate } from './events/voiceStateUpdate.js';
+import { handleMessageCreate } from './events/messageCreate.js';
 
 import { setupButtonHandlers } from './commands/setup/setup.js';
 import { importButtonHandlers, importModalHandler } from './commands/config/import.js';
 import { roomButtonHandlers, roomSelectHandlers, roomModalHandlers } from './commands/room/panel.js';
 import { templateListButtonHandlers } from './commands/template/list.js';
 import { getCommandModules } from './commands/registry.js';
+import { getPrefixCommands } from './commands/prefix/prefixCommands.js';
 
 function registerShutdownHandlers(client) {
     let shuttingDown = false;
@@ -58,9 +60,15 @@ async function main() {
         process.exit(1);
     }
 
-    const client = new Client({
-        intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
-    });
+    const prefixEnabled = env.PREFIX_ENABLED?.trim() === 'true';
+
+    const intents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates];
+    if (prefixEnabled) {
+        intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
+        logger.info('Prefix commands enabled, adding GuildMessages + MessageContent intents');
+    }
+
+    const client = new Client({ intents });
     registerShutdownHandlers(client);
 
     await connectDatabase();
@@ -86,11 +94,14 @@ async function main() {
 
     const modalHandlers = [importModalHandler, ...roomModalHandlers];
 
+    const prefixCommands = prefixEnabled ? getPrefixCommands() : new Collection();
+
     const context = {
         commands,
         buttonHandlers,
         selectMenuHandlers,
         modalHandlers,
+        prefixCommands,
         setupService,
         roomService,
         permissionService,
@@ -102,6 +113,10 @@ async function main() {
     handleReady(client, context);
     handleInteractionCreate(client, context);
     handleVoiceStateUpdate(client, context);
+
+    if (prefixEnabled) {
+        handleMessageCreate(client, context);
+    }
 
     await client.login(env.DISCORD_TOKEN);
 }

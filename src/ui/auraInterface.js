@@ -1,5 +1,6 @@
 import { EmbedBuilder } from 'discord.js';
 import { Branding } from '../config/constants.js';
+import { PurpleOS } from './theme.js';
 import {
     createAuraActivityActionRow,
     createAuraActivitySelect,
@@ -46,11 +47,11 @@ function buildTemplateOptions(templates) {
 
 function buildBaseEmbed(room, channel, state) {
     const headerLine = `<@${room.ownerId}> Use the buttons below to manage your voice channel.`;
-    const lineRoom = `Room <#${channel.id}>`;
-    const lineOwner = `Owner <@${room.ownerId}>`;
-    const lineStats = `Privacy ${privacyLabel(room.privacyMode)} \u2022 Limit ${limitLabel(room.userLimit)} \u2022 Members ${channel.members.size}`;
-    const lineFlags = `Lock ${onOff(room.locked)} \u2022 Hidden ${onOff(room.hidden)} \u2022 Auto Name ${onOff(room.autoNameEnabled)}`;
-    const lineNote = room.note ? `Note ${room.note}` : null;
+    const lineRoom = `${PurpleOS.Icons.CHANNEL} Room <#${channel.id}>`;
+    const lineOwner = `${PurpleOS.Icons.CROWN} Owner <@${room.ownerId}>`;
+    const lineStats = `${PurpleOS.Icons.SHIELD} ${privacyLabel(room.privacyMode)} ${PurpleOS.Icons.DOT} Limit ${limitLabel(room.userLimit)} ${PurpleOS.Icons.DOT} ${channel.members.size} members`;
+    const lineFlags = `${PurpleOS.Icons.LOCK} Lock ${onOff(room.locked)} ${PurpleOS.Icons.DOT} ${PurpleOS.Icons.EYE} Hidden ${onOff(room.hidden)} ${PurpleOS.Icons.DOT} ${PurpleOS.Icons.AUTONAME} Auto Name ${onOff(room.autoNameEnabled)}`;
+    const lineNote = room.note ? `${PurpleOS.Icons.NOTE} ${room.note}` : null;
 
     const descriptionLines = [
         headerLine,
@@ -63,15 +64,15 @@ function buildBaseEmbed(room, channel, state) {
 
     if (lineNote) descriptionLines.push(lineNote);
 
-    if (state.view === 'templates') descriptionLines.push('', state.selectedTemplate ? `Selected Template ${state.selectedTemplate}` : 'Select a template.');
-    if (state.view === 'permissions') descriptionLines.push('', 'Permission controls.');
-    if (state.view === 'privacy') descriptionLines.push('', 'Select privacy mode.');
-    if (state.view === 'kick') descriptionLines.push('', 'Select member to remove.');
-    if (state.view === 'activity') descriptionLines.push('', `Current Activity ${room.activityTag ?? 'None'}`);
+    if (state.view === 'templates') descriptionLines.push('', state.selectedTemplate ? `${PurpleOS.Icons.TEMPLATE} Selected: ${state.selectedTemplate}` : `${PurpleOS.Icons.TEMPLATE} Select a template.`);
+    if (state.view === 'permissions') descriptionLines.push('', `${PurpleOS.Icons.SHIELD} Permission controls.`);
+    if (state.view === 'privacy') descriptionLines.push('', `${PurpleOS.Icons.LOCK} Select privacy mode.`);
+    if (state.view === 'kick') descriptionLines.push('', `${PurpleOS.Icons.KICK} Select member to remove.`);
+    if (state.view === 'activity') descriptionLines.push('', `${PurpleOS.Icons.ACTIVITY} Current Activity: ${room.activityTag ?? 'None'}`);
 
     return new EmbedBuilder()
-        .setColor(0xfacc15)
-        .setTitle('AURA Interface')
+        .setColor(PurpleOS.Colors.PURPLEOS_PRIMARY)
+        .setTitle(`${PurpleOS.Icons.SPARKLE} AURA Rooms Interface`)
         .setDescription(descriptionLines.join('\n'))
         .setFooter({ text: Branding.FOOTER })
         .setTimestamp();
