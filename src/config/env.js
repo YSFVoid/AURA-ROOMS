@@ -14,6 +14,7 @@ const envSchema = z.object({
     DEBUG_COMMANDS: z.string().optional().default('false'),
     PREFIX_ENABLED: z.string().optional().default('false'),
     PREFIX: z.string().optional().default('!'),
+    PREFIX_ADMIN_ONLY: z.string().optional().default('true'),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -5,6 +5,7 @@ import {
     createAuraActivityActionRow,
     createAuraActivitySelect,
     createAuraBackActionRow,
+    createAuraExtrasRow,
     createAuraKickSelect,
     createAuraMainGridRows,
     createAuraPermissionsRow,
@@ -13,8 +14,21 @@ import {
     createAuraTemplateSelect,
 } from './components.js';
 
+function privacyLabel(mode) {
+    if (mode === 'public') return 'Public';
+    if (mode === 'locked') return 'Locked';
+    return 'Private';
+}
+
+function limitLabel(limit) {
+    return limit === 0 ? 'Unlimited' : String(limit);
+}
+
+function onOff(value) {
+    return value ? 'On' : 'Off';
+}
+
 function buildTemplateOptions(templates) {
-    const privacyLabel = (m) => m === 'public' ? 'Public' : m === 'locked' ? 'Locked' : 'Private';
     return templates.map((template) => ({
         label: template.name.slice(0, 100),
         value: template.name,
@@ -32,53 +46,47 @@ function buildKickOptions(channel, ownerId) {
         }));
 }
 
-function buildBaseEmbed(room, state) {
-    const description = `> <@${room.ownerId}> Use the buttons below to manage your voice channel.`;
+function buildBaseEmbed(room, channel, state) {
+    const lines = [
+        `> <@${room.ownerId}> Use the buttons below to manage your voice channel.`,
+        '',
+        `${PurpleOS.Icons.CHANNEL} **Room** <#${channel.id}>`,
+        `${PurpleOS.Icons.CROWN} **Owner** <@${room.ownerId}>`,
+        `${PurpleOS.Icons.SHIELD} **Privacy** ${privacyLabel(room.privacyMode)} ${PurpleOS.Icons.DOT} **Limit** ${limitLabel(room.userLimit)} ${PurpleOS.Icons.DOT} **Members** ${channel.members.size}`,
+        `${PurpleOS.Icons.LOCK} **Lock** ${onOff(room.locked)} ${PurpleOS.Icons.DOT} ${PurpleOS.Icons.EYE} **Hidden** ${onOff(room.hidden)} ${PurpleOS.Icons.DOT} ${PurpleOS.Icons.AUTONAME} **Auto Name** ${onOff(room.autoNameEnabled)}`,
+    ];
 
-    const embed = new EmbedBuilder()
+    if (room.note) lines.push(`${PurpleOS.Icons.NOTE} ${room.note}`);
+
+    if (state.view === 'permissions') lines.push('', `> ${PurpleOS.Icons.SHIELD} Select a permission action below.`);
+    if (state.view === 'templates') lines.push('', `> ${PurpleOS.Icons.TEMPLATE} ${state.selectedTemplate ? `Selected: **${state.selectedTemplate}**` : 'Select a template.'}`);
+    if (state.view === 'privacy') lines.push('', `> ${PurpleOS.Icons.LOCK} Select privacy mode.`);
+    if (state.view === 'kick') lines.push('', `> ${PurpleOS.Icons.KICK} Select a member to remove.`);
+    if (state.view === 'activity') lines.push('', `> ${PurpleOS.Icons.ACTIVITY} Current Activity: **${room.activityTag ?? 'None'}**`);
+    if (state.view === 'extras') lines.push('', `> ${PurpleOS.Icons.INFO} Additional room controls.`);
+
+    return new EmbedBuilder()
         .setColor(PurpleOS.Colors.PURPLEOS_PRIMARY)
         .setTitle('AURA Interface')
-        .setDescription(description)
+        .setDescription(lines.join('\n'))
         .setFooter({ text: Branding.FOOTER })
         .setTimestamp();
-
-    if (state.view === 'permissions') {
-        embed.setDescription(`${description}\n\n> ${PurpleOS.Icons.SHIELD} Select a permission action below.`);
-    } else if (state.view === 'templates') {
-        const tmpl = state.selectedTemplate ? `Selected: **${state.selectedTemplate}**` : 'Select a template.';
-        embed.setDescription(`${description}\n\n> ${PurpleOS.Icons.TEMPLATE} ${tmpl}`);
-    } else if (state.view === 'privacy') {
-        embed.setDescription(`${description}\n\n> ${PurpleOS.Icons.LOCK} Select privacy mode.`);
-    } else if (state.view === 'kick') {
-        embed.setDescription(`${description}\n\n> ${PurpleOS.Icons.KICK} Select a member to remove.`);
-    } else if (state.view === 'activity') {
-        const tag = room.activityTag ?? 'None';
-        embed.setDescription(`${description}\n\n> ${PurpleOS.Icons.ACTIVITY} Current Activity: **${tag}**`);
-    }
-
-    return embed;
 }
 
-export function renderMain({ room, canClaim }) {
-    const embed = buildBaseEmbed(room, { view: 'main', selectedTemplate: null });
-    return {
-        embed,
-        components: [...createAuraMainGridRows(room, canClaim)],
-    };
+export function renderMain({ room, channel, canClaim }) {
+    const embed = buildBaseEmbed(room, channel, { view: 'main', selectedTemplate: null });
+    return { embed, components: [...createAuraMainGridRows(room, canClaim)] };
 }
 
-export function renderPermissions({ room }) {
-    const embed = buildBaseEmbed(room, { view: 'permissions', selectedTemplate: null });
-    return {
-        embed,
-        components: [createAuraPermissionsRow()],
-    };
+export function renderPermissions({ room, channel }) {
+    const embed = buildBaseEmbed(room, channel, { view: 'permissions', selectedTemplate: null });
+    return { embed, components: [createAuraPermissionsRow()] };
 }
 
-export function renderTemplates({ room, templates, state }) {
+export function renderTemplates({ room, channel, templates, state }) {
     const selectedTemplate = state?.selectedTemplate ?? null;
     const templateOptions = buildTemplateOptions(templates ?? []);
-    const embed = buildBaseEmbed(room, { view: 'templates', selectedTemplate });
+    const embed = buildBaseEmbed(room, channel, { view: 'templates', selectedTemplate });
     return {
         embed,
         components: [
@@ -88,32 +96,28 @@ export function renderTemplates({ room, templates, state }) {
     };
 }
 
-export function renderPrivacy({ room }) {
-    const embed = buildBaseEmbed(room, { view: 'privacy', selectedTemplate: null });
-    return {
-        embed,
-        components: [createAuraPrivacySelect(room.privacyMode), createAuraBackActionRow()],
-    };
+export function renderPrivacy({ room, channel }) {
+    const embed = buildBaseEmbed(room, channel, { view: 'privacy', selectedTemplate: null });
+    return { embed, components: [createAuraPrivacySelect(room.privacyMode), createAuraBackActionRow()] };
 }
 
 export function renderKick({ room, channel }) {
-    const embed = buildBaseEmbed(room, { view: 'kick', selectedTemplate: null });
+    const embed = buildBaseEmbed(room, channel, { view: 'kick', selectedTemplate: null });
     const kickOptions = buildKickOptions(channel, room.ownerId);
+    return { embed, components: [createAuraKickSelect(kickOptions), createAuraBackActionRow()] };
+}
+
+export function renderActivity({ room, channel }) {
+    const embed = buildBaseEmbed(room, channel, { view: 'activity', selectedTemplate: null });
     return {
         embed,
-        components: [createAuraKickSelect(kickOptions), createAuraBackActionRow()],
+        components: [createAuraActivitySelect(room.activityTag ?? null), createAuraActivityActionRow()],
     };
 }
 
-export function renderActivity({ room }) {
-    const embed = buildBaseEmbed(room, { view: 'activity', selectedTemplate: null });
-    return {
-        embed,
-        components: [
-            createAuraActivitySelect(room.activityTag ?? null),
-            createAuraActivityActionRow(),
-        ],
-    };
+export function renderExtras({ room, channel }) {
+    const embed = buildBaseEmbed(room, channel, { view: 'extras', selectedTemplate: null });
+    return { embed, components: [createAuraExtrasRow()] };
 }
 
 export function renderAuraInterface(params) {
@@ -123,5 +127,6 @@ export function renderAuraInterface(params) {
     if (state.view === 'privacy') return renderPrivacy(params);
     if (state.view === 'kick') return renderKick(params);
     if (state.view === 'activity') return renderActivity(params);
+    if (state.view === 'extras') return renderExtras(params);
     return renderMain(params);
 }
