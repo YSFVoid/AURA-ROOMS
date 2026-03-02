@@ -2,6 +2,7 @@ import { aboutCommand } from './meta/about.js';
 import { debugCommand } from './meta/debug.js';
 import { exportCommand } from './config/export.js';
 import { importCommand } from './config/import.js';
+import { musicCommand } from './music/music.js';
 import { presetCommand } from './preset/preset.js';
 import { roomCommand } from './room/panel.js';
 import { setupCommand } from './setup/setup.js';
@@ -20,7 +21,7 @@ function assertUniqueCommandNames(commands) {
 
 export function getCommandModules(options = {}) {
     const debugEnabled = options.debugEnabled === true;
-    const commands = [aboutCommand, setupCommand, exportCommand, importCommand, roomCommand, templateCommand, presetCommand];
+    const commands = [aboutCommand, setupCommand, exportCommand, importCommand, roomCommand, templateCommand, presetCommand, musicCommand];
     if (debugEnabled) {
         commands.push(debugCommand);
     }

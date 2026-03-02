@@ -144,6 +144,19 @@ export const AuraPanelIds = {
     INPUT_DENY_ROLE: 'aura:input:denyRole',
     MODAL_NOTE: 'aura:modal:note',
     INPUT_NOTE: 'aura:input:note',
+
+    MUSIC_PLAY: 'aura:music:play',
+    MUSIC_PAUSE: 'aura:music:pause',
+    MUSIC_RESUME: 'aura:music:resume',
+    MUSIC_SKIP: 'aura:music:skip',
+    MUSIC_STOP: 'aura:music:stop',
+    MUSIC_LOOP: 'aura:music:loop',
+    MUSIC_VOLUME: 'aura:music:volume',
+    MUSIC_QUEUE: 'aura:music:queue',
+    MODAL_MUSIC_PLAY: 'aura:modal:music:play',
+    INPUT_MUSIC_URL: 'aura:input:music:url',
+    MODAL_MUSIC_VOLUME: 'aura:modal:music:volume',
+    INPUT_MUSIC_VOLUME: 'aura:input:music:volume',
 };
 
 export const ExportImportVersion = 1;

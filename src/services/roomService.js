@@ -512,6 +512,11 @@ export class RoomService {
             await this.abuseService.recordRoomDeleted(room.guildId, room.ownerId);
             this.cancelEmptyDelete(channelId);
 
+            try {
+                const { stopIfInChannel } = await import('../music/playerManager.js');
+                stopIfInChannel(room.guildId, channelId);
+            } catch { /* music module best-effort */ }
+
             await this.auditLogService.logEvent(room.guildId, {
                 eventType: AuditEventTypes.ROOM_DELETED,
                 result: 'success',

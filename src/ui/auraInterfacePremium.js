@@ -130,12 +130,35 @@ export function renderAdmin({ room, channel }) {
     return { embed, components: [row] };
 }
 
-export function renderMusic({ room, channel }) {
+export function renderMusic({ room, channel, musicStatus }) {
     const embed = buildBaseEmbed(room, channel, { view: 'music', selectedTemplate: null });
-    const row = new ActionRowBuilder().addComponents(
+
+    if (musicStatus) {
+        const lines = [];
+        if (musicStatus.current) lines.push(`\u25b6\ufe0f **Now Playing:** ${musicStatus.current.title}`);
+        else lines.push('\u25b6\ufe0f **Now Playing:** Nothing');
+        if (musicStatus.queueLength > 0) {
+            lines.push(`\ud83d\udcdc **Queue:** ${musicStatus.queueLength} track${musicStatus.queueLength > 1 ? 's' : ''}`);
+        }
+        lines.push(`\ud83d\udd01 **Loop:** ${musicStatus.loopMode} ${PurpleOS.Icons.DOT} \ud83d\udd09 **Vol:** ${musicStatus.volume}%`);
+        const desc = embed.data.description + '\n\n' + lines.join('\n');
+        embed.setDescription(desc);
+    }
+
+    const row1 = new ActionRowBuilder().addComponents(
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_PLAY, icon: '\u25b6\ufe0f' }),
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_PAUSE, icon: '\u23f8\ufe0f' }),
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_RESUME, icon: '\u23ef\ufe0f' }),
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_SKIP, icon: '\u23ed\ufe0f' }),
+    );
+    const row2 = new ActionRowBuilder().addComponents(
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_STOP, icon: '\ud83d\uded1' }),
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_LOOP, icon: '\ud83d\udd01' }),
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_VOLUME, icon: '\ud83d\udd09' }),
+        createAuraIconButton({ customId: AuraPanelIds.MUSIC_QUEUE, icon: '\ud83d\udcdc' }),
         createAuraIconButton({ customId: AuraPanelIds.BACK_VIEW, icon: '\u21a9' }),
     );
-    return { embed, components: [row] };
+    return { embed, components: [row1, row2] };
 }
 
 export function renderAuraInterface(params) {
