@@ -43,7 +43,7 @@ const guildSettingsSchema = new Schema(
         emptyDeleteSeconds: {
             type: Number,
             required: true,
-            default: 30,
+            default: 3,
             min: SafeLimits.MIN_EMPTY_DELETE_SECONDS,
             max: SafeLimits.MAX_EMPTY_DELETE_SECONDS,
         },

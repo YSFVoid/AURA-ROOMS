@@ -68,9 +68,13 @@ export class AbuseService {
         return { allowed: true, code: 'OK' };
     }
 
-    async recordCreateSuccess(guildId, userId, createCooldownSeconds) {
+    async getState(guildId, userId) {
+        return getState(guildId, userId);
+    }
+
+    async recordCreateSuccess(guildId, userId, createCooldownSeconds, channelId) {
         const now = new Date();
-        await recordCreateAttempt(guildId, userId, now);
+        await recordCreateAttempt(guildId, userId, now, channelId);
         await incrementActiveRooms(guildId, userId);
 
         const key = makeCooldownKey('create', guildId, userId);

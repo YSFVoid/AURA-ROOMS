@@ -15,6 +15,18 @@ export async function listByGuild(guildId) {
     return TempRoom.find({ guildId });
 }
 
+export async function listByOwner(guildId, ownerId) {
+    return TempRoom.find({ guildId, ownerId }).sort({ createdAt: -1, _id: -1 });
+}
+
+export async function findByOwner(guildId, ownerId) {
+    return listByOwner(guildId, ownerId);
+}
+
+export async function getNewestByOwner(guildId, ownerId) {
+    return TempRoom.findOne({ guildId, ownerId }).sort({ createdAt: -1, _id: -1 });
+}
+
 export async function listAll() {
     return TempRoom.find();
 }

@@ -147,6 +147,22 @@ export class PermissionService {
         const accessAllow = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect];
         overwrites.push({ id: ownerId, allow: accessAllow, deny: [] });
 
+        const botId = channel.guild.members.me?.id;
+        if (botId) {
+            overwrites.push({
+                id: botId,
+                allow: [
+                    PermissionFlagsBits.ViewChannel,
+                    PermissionFlagsBits.Connect,
+                    PermissionFlagsBits.ManageChannels,
+                    PermissionFlagsBits.MoveMembers,
+                    PermissionFlagsBits.SendMessages,
+                    PermissionFlagsBits.SendMessagesInThreads,
+                ],
+                deny: [],
+            });
+        }
+
         const sortedTrusted = [...new Set(trustedRoleIds)].sort((a, b) => a.localeCompare(b));
         for (const roleId of sortedTrusted) {
             overwrites.push({ id: roleId, allow: accessAllow, deny: [] });

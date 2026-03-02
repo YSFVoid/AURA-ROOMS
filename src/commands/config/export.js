@@ -17,7 +17,7 @@ const exportSchema = z.object({
         defaultTemplate: z.string().optional(),
         defaultPrivacy: z.enum(['public', 'locked', 'private']).optional(),
         defaultUserLimit: z.number().int().min(0).max(99).optional(),
-        emptyDeleteSeconds: z.number().int().min(5).max(3600).optional(),
+        emptyDeleteSeconds: z.number().int().min(3).max(3600).optional(),
         createCooldownSeconds: z.number().int().min(0).max(3600).optional(),
         maxRoomsPerUser: z.number().int().min(1).max(10).optional(),
         trustedRoleIds: z.array(z.string()).optional(),

@@ -4,10 +4,15 @@ import { normalizeAllGuildSettingsDefaults } from '../db/repos/guildSettingsRepo
 import { logger } from '../utils/logger.js';
 
 export function handleReady(client, context) {
-    client.once('ready', async () => {
+    client.once('clientReady', async () => {
         logger.info({ tag: client.user?.tag }, `${Branding.NAME} is ready`);
 
-        client.user?.setActivity(Branding.PRESENCE_TEXT, { type: ActivityType.Listening });
+        if (client.user) {
+            client.user.setPresence({
+                status: 'dnd',
+                activities: [{ name: Branding.PRESENCE_TEXT, type: ActivityType.Listening }],
+            });
+        }
 
         try {
             await normalizeAllGuildSettingsDefaults();

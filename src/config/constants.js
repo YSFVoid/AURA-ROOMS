@@ -1,16 +1,16 @@
 export const Branding = {
     NAME: 'AURA Rooms',
     DESCRIPTION: 'Temp Voice Rooms (Phase 1)',
-    FOOTER: 'YSF • Lone wolf developer',
+    FOOTER: 'YSF \u2022 Lone wolf developer',
     ABOUT_FOOTER: 'Developed by YSF (Lone wolf developer)',
     DEVELOPER: 'YSF (Lone wolf developer)',
-    PRESENCE_TEXT: '/about • YSF',
+    PRESENCE_TEXT: '/about \u2022 YSF',
 };
 
 export const ChannelNames = {
     CATEGORY: 'AURA Rooms',
     LOG: 'aura-logs',
-    LOBBY: '➕ Create Room',
+    LOBBY: '\u2795 Create Room',
     INTERFACE: 'aura-interface',
 };
 
@@ -31,7 +31,7 @@ export const Defaults = {
     NAME_TEMPLATE: "{displayName}'s room",
     PRIVACY: 'locked',
     USER_LIMIT: 0,
-    EMPTY_DELETE_SECONDS: 15,
+    EMPTY_DELETE_SECONDS: 3,
     CREATE_COOLDOWN_SECONDS: 30,
     MAX_ROOMS_PER_USER: 1,
     JOIN_LEAVE_WINDOW_MS: 10_000,
@@ -97,6 +97,51 @@ export const ComponentIds = {
 
     TEMPLATE_LIST_PREV: 'template:list:prev',
     TEMPLATE_LIST_NEXT: 'template:list:next',
+};
+
+export const AuraPanelIds = {
+    RENAME: 'aura:rename',
+    LOCK: 'aura:lock',
+    HIDE: 'aura:hide',
+    LIMIT: 'aura:limit',
+    PRIVACY: 'aura:privacy',
+    CLAIM: 'aura:claim',
+    ACTIVITY: 'aura:activity',
+    AUTONAME: 'aura:autoname',
+    KICK: 'aura:kick',
+    KICK_VIEW: 'aura:kick:view',
+    REFRESH: 'aura:refresh',
+    PERMISSIONS: 'aura:permissions',
+    ALLOW_USER: 'aura:allowUser',
+    DENY_USER: 'aura:denyUser',
+    ALLOW_ROLE: 'aura:allowRole',
+    DENY_ROLE: 'aura:denyRole',
+    TEMPLATES: 'aura:templates',
+    TEMPLATES_APPLY: 'aura:templates:apply',
+    NOTE: 'aura:note',
+    INFO: 'aura:info',
+    BACK_MAIN: 'aura:back:main',
+    BACK_VIEW: 'aura:view:back',
+
+    PRIVACY_SELECT: 'aura:privacy:select',
+    KICK_SELECT: 'aura:kick:select',
+    ACTIVITY_SELECT: 'aura:activity:select',
+    TEMPLATE_SELECT: 'aura:templates:select',
+
+    MODAL_RENAME: 'aura:modal:rename',
+    INPUT_RENAME: 'aura:input:rename',
+    MODAL_LIMIT: 'aura:modal:limit',
+    INPUT_LIMIT: 'aura:input:limit',
+    MODAL_ALLOW_USER: 'aura:modal:allowUser',
+    INPUT_ALLOW_USER: 'aura:input:allowUser',
+    MODAL_DENY_USER: 'aura:modal:denyUser',
+    INPUT_DENY_USER: 'aura:input:denyUser',
+    MODAL_ALLOW_ROLE: 'aura:modal:allowRole',
+    INPUT_ALLOW_ROLE: 'aura:input:allowRole',
+    MODAL_DENY_ROLE: 'aura:modal:denyRole',
+    INPUT_DENY_ROLE: 'aura:input:denyRole',
+    MODAL_NOTE: 'aura:modal:note',
+    INPUT_NOTE: 'aura:input:note',
 };
 
 export const ExportImportVersion = 1;

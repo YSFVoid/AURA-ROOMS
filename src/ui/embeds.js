@@ -1,5 +1,6 @@
 import { EmbedBuilder } from 'discord.js';
 import { Branding } from '../config/constants.js';
+import { humanizeKey } from '../utils/humanize.js';
 import { PurpleOS } from './theme.js';
 
 export function createPurpleEmbed({ title, subtitle, kind = 'PURPLEOS_PRIMARY', fields = [] }) {
@@ -50,7 +51,7 @@ export function createInfoEmbed(title, description, fields = []) {
 }
 
 export function createActionFeedback(action, detail, requestId) {
-    const fields = [{ name: 'Action', value: action, inline: true }];
+    const fields = [{ name: 'Action', value: humanizeKey(action), inline: true }];
     if (detail) fields.push({ name: 'Detail', value: detail, inline: true });
     if (requestId) fields.push({ name: 'Request', value: `\`${requestId}\``, inline: true });
 

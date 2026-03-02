@@ -94,6 +94,9 @@ export async function normalizeAllGuildSettingsDefaults() {
 
             if (!doc.logVerbosity) patch.logVerbosity = Defaults.LOG_VERBOSITY;
             if (!doc.namingPolicy) patch.namingPolicy = Defaults.NAMING_POLICY;
+            if (doc.emptyDeleteSeconds !== Defaults.EMPTY_DELETE_SECONDS) {
+                patch.emptyDeleteSeconds = Defaults.EMPTY_DELETE_SECONDS;
+            }
 
             if (Object.keys(patch).length === 0) return;
             await GuildSettings.updateOne({ _id: doc._id }, { $set: patch });

@@ -13,11 +13,19 @@ export function handleVoiceStateUpdate(client, context) {
         const guildId = newState.guild?.id ?? oldState.guild?.id;
 
         if (!guildId) return;
+        if (previousChannelId === currentChannelId) return;
 
-        logger.debug({ guildId, userId: member.id, from: previousChannelId, to: currentChannelId }, 'voiceStateUpdate fired');
+        logger.info({
+            userId: member.id,
+            guildId,
+            oldChannelId: previousChannelId,
+            newChannelId: currentChannelId,
+            ts: new Date().toISOString(),
+            reason: 'channelIdChanged',
+        }, 'voice channel transition');
 
         try {
-            if (currentChannelId && currentChannelId !== previousChannelId) {
+            if (currentChannelId) {
                 traceEvent(guildId, { userId: member.id, action: 'JOIN_DETECTED', toChannelId: currentChannelId, fromChannelId: previousChannelId, result: 'ok' });
 
                 const lobby = await isLobby(guildId, currentChannelId);
@@ -43,7 +51,7 @@ export function handleVoiceStateUpdate(client, context) {
                 }
             }
 
-            if (previousChannelId && previousChannelId !== currentChannelId) {
+            if (previousChannelId) {
                 traceEvent(guildId, { userId: member.id, action: 'LEAVE_DETECTED', fromChannelId: previousChannelId, result: 'ok' });
 
                 const trackedRoom = await getByChannel(previousChannelId);

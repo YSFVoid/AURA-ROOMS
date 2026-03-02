@@ -5,10 +5,21 @@ export async function getState(guildId, userId) {
     return UserAbuseState.findOne({ guildId, userId });
 }
 
-export async function recordCreateAttempt(guildId, userId, ts) {
+export async function recordCreateAttempt(guildId, userId, ts, lastCreatedChannelId) {
+    const update = { guildId, userId, lastCreateAt: ts };
+    if (lastCreatedChannelId) update.lastCreatedChannelId = lastCreatedChannelId;
+
     await UserAbuseState.findOneAndUpdate(
         { guildId, userId },
-        { $set: { guildId, userId, lastCreateAt: ts } },
+        { $set: update },
+        { upsert: true },
+    );
+}
+
+export async function setLastCreatedChannel(guildId, userId, channelId) {
+    await UserAbuseState.findOneAndUpdate(
+        { guildId, userId },
+        { $set: { guildId, userId, lastCreatedChannelId: channelId } },
         { upsert: true },
     );
 }

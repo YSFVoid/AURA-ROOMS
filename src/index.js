@@ -1,7 +1,8 @@
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import { env } from './config/env.js';
-import { connectDatabase } from './db/mongo.js';
+import { connectDatabase, disconnectDatabase } from './db/mongo.js';
 import { logger } from './utils/logger.js';
+import { acquireSingleInstance, releaseSingleInstance } from './utils/singleInstance.js';
 
 import { SetupService } from './services/setupService.js';
 import { RoomService } from './services/roomService.js';
@@ -14,19 +15,53 @@ import { handleReady } from './events/ready.js';
 import { handleInteractionCreate } from './events/interactionCreate.js';
 import { handleVoiceStateUpdate } from './events/voiceStateUpdate.js';
 
-import { aboutCommand } from './commands/meta/about.js';
-import { debugCommand } from './commands/meta/debug.js';
-import { setupCommand, setupButtonHandlers } from './commands/setup/setup.js';
-import { exportCommand } from './commands/config/export.js';
-import { importCommand, importButtonHandlers, importModalHandler } from './commands/config/import.js';
-import { roomCommand, roomButtonHandlers, roomSelectHandlers, roomModalHandlers } from './commands/room/panel.js';
-import { templateCommand } from './commands/template/save.js';
+import { setupButtonHandlers } from './commands/setup/setup.js';
+import { importButtonHandlers, importModalHandler } from './commands/config/import.js';
+import { roomButtonHandlers, roomSelectHandlers, roomModalHandlers } from './commands/room/panel.js';
 import { templateListButtonHandlers } from './commands/template/list.js';
+import { getCommandModules } from './commands/registry.js';
+
+function registerShutdownHandlers(client) {
+    let shuttingDown = false;
+
+    const shutdown = async (signal) => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        logger.info({ signal }, 'Shutting down');
+
+        try {
+            await disconnectDatabase();
+        } catch (error) {
+            logger.warn({ error }, 'Failed to disconnect MongoDB cleanly');
+        }
+
+        try {
+            client.destroy();
+        } catch (error) {
+            logger.warn({ error }, 'Failed to destroy Discord client cleanly');
+        }
+
+        releaseSingleInstance();
+        process.exit(0);
+    };
+
+    process.once('SIGINT', () => void shutdown('SIGINT'));
+    process.once('SIGTERM', () => void shutdown('SIGTERM'));
+    process.once('exit', () => {
+        releaseSingleInstance();
+    });
+}
 
 async function main() {
+    if (!acquireSingleInstance()) {
+        logger.fatal('Another AURA Rooms instance is already running');
+        process.exit(1);
+    }
+
     const client = new Client({
         intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
     });
+    registerShutdownHandlers(client);
 
     await connectDatabase();
 
@@ -37,17 +72,8 @@ async function main() {
     const templateService = new TemplateService(permissionService);
     const roomService = new RoomService(client, permissionService, abuseService, auditLogService, templateService);
 
-    const commands = new Collection();
-    commands.set(aboutCommand.data.name, aboutCommand);
-    commands.set(setupCommand.data.name, setupCommand);
-    commands.set(exportCommand.data.name, exportCommand);
-    commands.set(importCommand.data.name, importCommand);
-    commands.set(roomCommand.data.name, roomCommand);
-    commands.set(templateCommand.data.name, templateCommand);
-
-    if (env.DEBUG_COMMANDS?.trim() === 'true') {
-        commands.set(debugCommand.data.name, debugCommand);
-    }
+    const commandModules = getCommandModules({ debugEnabled: env.DEBUG_COMMANDS?.trim() === 'true' });
+    const commands = new Collection(commandModules.map((command) => [command.data.name, command]));
 
     const buttonHandlers = [
         ...setupButtonHandlers,
@@ -81,6 +107,7 @@ async function main() {
 }
 
 main().catch((error) => {
+    releaseSingleInstance();
     logger.fatal({ error }, 'Fatal startup error');
     process.exit(1);
 });

@@ -6,6 +6,7 @@ const userAbuseStateSchema = new Schema(
         guildId: { type: String, required: true, index: true },
         userId: { type: String, required: true, index: true },
         lastCreateAt: { type: Date },
+        lastCreatedChannelId: { type: String },
         activeRoomCount: { type: Number, required: true, default: 0, min: 0 },
         joinLeaveEvents: {
             type: [Date],

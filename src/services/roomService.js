@@ -1,14 +1,26 @@
 import { ChannelType, PermissionFlagsBits } from 'discord.js';
+import { randomUUID } from 'node:crypto';
 import { AuditEventTypes, Defaults } from '../config/constants.js';
 import { ensureDefaults } from '../db/repos/guildSettingsRepo.js';
 import { clearByChannel } from '../db/repos/permissionsRepo.js';
-import { create, deleteRoom, getByChannel, listAll, transferOwner, updateRoomSettings } from '../db/repos/roomsRepo.js';
+import {
+    create,
+    deleteRoom,
+    findByOwner,
+    getByChannel,
+    listAll,
+    transferOwner,
+    updateRoomSettings,
+} from '../db/repos/roomsRepo.js';
 import { interpolateTemplate, sanitizeRoomName } from '../utils/format.js';
+import { humanizeDecisionCode } from '../utils/humanize.js';
 import { logger } from '../utils/logger.js';
 import { runGuildExclusive } from '../utils/guildLock.js';
 import { traceEvent } from '../utils/voiceTracer.js';
-import { buildRoomPanelEmbed, buildRoomPanelComponents } from '../ui/roomPanel.js';
+import { renderAuraInterface } from '../ui/auraInterface.js';
 import { canClaimRoom } from '../utils/permissions.js';
+
+const RECENT_REUSE_WINDOW_MS = 10_000;
 
 export class RoomService {
     constructor(client, permissionService, abuseService, auditLogService, templateService) {
@@ -20,6 +32,7 @@ export class RoomService {
         this.emptyDeleteTimers = new Map();
         this.emptyDeleteDueAt = new Map();
         this.deletingRoomIds = new Set();
+        this.createLocks = new Map();
     }
 
     accessRoles(settings) {
@@ -28,151 +41,275 @@ export class RoomService {
             : settings.trustedRoleIds;
     }
 
+    acquireCreateLock(guildId, userId) {
+        let guildLocks = this.createLocks.get(guildId);
+        if (!guildLocks) {
+            guildLocks = new Set();
+            this.createLocks.set(guildId, guildLocks);
+        }
+        if (guildLocks.has(userId)) return false;
+        guildLocks.add(userId);
+        return true;
+    }
+
+    releaseCreateLock(guildId, userId) {
+        const guildLocks = this.createLocks.get(guildId);
+        if (!guildLocks) return;
+        guildLocks.delete(userId);
+        if (guildLocks.size === 0) {
+            this.createLocks.delete(guildId);
+        }
+    }
+
     async handleLobbyJoin(member, lobbyChannelId, previousChannelId) {
-        await runGuildExclusive(member.guild.id, async () => {
-            const settings = await ensureDefaults(member.guild.id);
-            traceEvent(member.guild.id, { userId: member.id, action: 'SETTINGS_LOADED', result: 'ok', reason: `category=${settings.categoryId}` });
+        const guildId = member.guild.id;
+        const userId = member.id;
+        const requestId = randomUUID();
 
-            const joinLeaveDecision = await this.abuseService.enforceJoinLeaveLimiter(member.guild.id, member.id);
-            if (!joinLeaveDecision.allowed) {
-                traceEvent(member.guild.id, { userId: member.id, action: 'ABUSE_CHECK', result: 'blocked', reason: joinLeaveDecision.code });
-                await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, joinLeaveDecision);
-                return;
-            }
+        logger.info({ requestId, userId, lobbyChannelId, step: 'LOBBY_HANDLER_ENTER' }, 'lobby handler entered');
 
-            const guildRateDecision = this.abuseService.enforceGuildCreateRateLimit(member.guild.id);
-            if (!guildRateDecision.allowed) {
-                traceEvent(member.guild.id, { userId: member.id, action: 'ABUSE_CHECK', result: 'blocked', reason: guildRateDecision.code });
-                await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, guildRateDecision);
-                return;
-            }
+        if (!this.acquireCreateLock(guildId, userId)) {
+            logger.info({ requestId, userId, lobbyChannelId, step: 'SKIP_LOCKED' }, 'lobby handler skipped due to lock');
+            traceEvent(guildId, { userId, action: 'CREATE_LOCK', result: 'blocked', reason: 'single_flight' });
+            return;
+        }
 
-            const cooldownDecision = await this.abuseService.enforceCreateCooldown(member.guild.id, member.id, settings.createCooldownSeconds);
-            if (!cooldownDecision.allowed) {
-                traceEvent(member.guild.id, { userId: member.id, action: 'ABUSE_CHECK', result: 'blocked', reason: cooldownDecision.code });
-                await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, cooldownDecision);
-                return;
-            }
+        try {
+            await runGuildExclusive(guildId, async () => {
+                if (member.voice.channelId !== lobbyChannelId) {
+                    traceEvent(guildId, { userId, action: 'LOBBY_RECHECK', result: 'skip', reason: 'member_not_in_lobby' });
+                    return;
+                }
 
-            const maxRoomsDecision = await this.abuseService.enforceMaxRoomsPerUser(member.guild.id, member.id, settings.maxRoomsPerUser);
-            if (!maxRoomsDecision.allowed) {
-                traceEvent(member.guild.id, { userId: member.id, action: 'ABUSE_CHECK', result: 'blocked', reason: maxRoomsDecision.code });
-                await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, maxRoomsDecision);
-                return;
-            }
+                const settings = await ensureDefaults(guildId);
+                traceEvent(guildId, { userId, action: 'SETTINGS_LOADED', result: 'ok', reason: `category=${settings.categoryId}` });
+                await this.cleanupUntrackedEmptyRooms(member.guild, settings);
 
-            traceEvent(member.guild.id, { userId: member.id, action: 'ABUSE_CHECK', result: 'passed' });
+                const reusedOwnedRoom = await this.tryReuseExistingOwnerRoom(member, settings);
+                if (reusedOwnedRoom) {
+                    logger.info({ requestId, userId, lobbyChannelId, roomChannelId: reusedOwnedRoom.id, step: 'REUSED_EXISTING_ROOM' }, 'reused existing room');
+                    traceEvent(guildId, { userId, action: 'ROOM_REUSE', toChannelId: reusedOwnedRoom.id, result: 'success', reason: 'existing_owner_room' });
+                    return;
+                }
 
-            const me = member.guild.members.me;
-            if (!me) {
-                const msg = 'Bot guild member not found';
-                logger.error({ guildId: member.guild.id }, msg);
-                traceEvent(member.guild.id, { userId: member.id, action: 'BOT_PERMS_CHECK', result: 'error', reason: msg });
-                return;
-            }
+                const abuseState = await this.abuseService.getState(guildId, userId);
+                const reusedRecentRoom = await this.tryReuseRecentCreatedRoom(member, abuseState);
+                if (reusedRecentRoom) {
+                    logger.info({ requestId, userId, lobbyChannelId, roomChannelId: reusedRecentRoom.id, step: 'REUSED_RECENT_ROOM' }, 'reused recent room');
+                    traceEvent(guildId, { userId, action: 'ROOM_REUSE', toChannelId: reusedRecentRoom.id, result: 'success', reason: 'recent_create_window' });
+                    return;
+                }
 
-            const requiredPerms = [
-                PermissionFlagsBits.ManageChannels,
-                PermissionFlagsBits.ViewChannel,
-                PermissionFlagsBits.Connect,
-                PermissionFlagsBits.MoveMembers,
-            ];
+                const joinLeaveDecision = await this.abuseService.enforceJoinLeaveLimiter(guildId, userId);
+                if (!joinLeaveDecision.allowed) {
+                    traceEvent(guildId, { userId, action: 'ABUSE_CHECK', result: 'blocked', reason: joinLeaveDecision.code });
+                    await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, joinLeaveDecision);
+                    return;
+                }
 
-            const permSource = settings.categoryId && member.guild.channels.cache.has(settings.categoryId)
-                ? me.permissionsIn(settings.categoryId)
-                : me.permissions;
+                const guildRateDecision = this.abuseService.enforceGuildCreateRateLimit(guildId);
+                if (!guildRateDecision.allowed) {
+                    traceEvent(guildId, { userId, action: 'ABUSE_CHECK', result: 'blocked', reason: guildRateDecision.code });
+                    await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, guildRateDecision);
+                    return;
+                }
 
-            const missingPerms = requiredPerms.filter((perm) => !permSource.has(perm));
-            if (missingPerms.length > 0) {
-                const labels = missingPerms.map((p) => String(p)).join(', ');
-                const msg = `Bot missing permissions: ${labels}`;
-                logger.warn({ guildId: member.guild.id, categoryId: settings.categoryId }, msg);
-                traceEvent(member.guild.id, { userId: member.id, action: 'BOT_PERMS_CHECK', result: 'blocked', reason: msg });
+                const cooldownDecision = await this.abuseService.enforceCreateCooldown(guildId, userId, settings.createCooldownSeconds);
+                if (!cooldownDecision.allowed) {
+                    traceEvent(guildId, { userId, action: 'ABUSE_CHECK', result: 'blocked', reason: cooldownDecision.code });
+                    await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, cooldownDecision);
+                    return;
+                }
 
-                await this.auditLogService.logEvent(member.guild.id, {
-                    eventType: 'ROOM_CREATE_BLOCKED',
-                    result: 'blocked',
-                    actorId: member.id,
-                    details: msg,
+                const maxRoomsDecision = await this.abuseService.enforceMaxRoomsPerUser(guildId, userId, settings.maxRoomsPerUser);
+                if (!maxRoomsDecision.allowed) {
+                    traceEvent(guildId, { userId, action: 'ABUSE_CHECK', result: 'blocked', reason: maxRoomsDecision.code });
+                    await this.handleBlockedJoin(member, lobbyChannelId, previousChannelId, maxRoomsDecision);
+                    return;
+                }
+
+                traceEvent(guildId, { userId, action: 'ABUSE_CHECK', result: 'passed' });
+
+                const me = member.guild.members.me;
+                if (!me) {
+                    const msg = 'Bot guild member not found';
+                    logger.error({ guildId }, msg);
+                    traceEvent(guildId, { userId, action: 'BOT_PERMS_CHECK', result: 'error', reason: msg });
+                    return;
+                }
+
+                const requiredPerms = [
+                    PermissionFlagsBits.ManageChannels,
+                    PermissionFlagsBits.ViewChannel,
+                    PermissionFlagsBits.Connect,
+                    PermissionFlagsBits.MoveMembers,
+                ];
+
+                const permSource = settings.categoryId && member.guild.channels.cache.has(settings.categoryId)
+                    ? me.permissionsIn(settings.categoryId)
+                    : me.permissions;
+
+                const missingPerms = requiredPerms.filter((perm) => !permSource.has(perm));
+                if (missingPerms.length > 0) {
+                    const labels = missingPerms.map((perm) => String(perm)).join(', ');
+                    const msg = `Bot missing permissions: ${labels}`;
+                    logger.warn({ guildId, categoryId: settings.categoryId }, msg);
+                    traceEvent(guildId, { userId, action: 'BOT_PERMS_CHECK', result: 'blocked', reason: msg });
+
+                    await this.auditLogService.logEvent(guildId, {
+                        eventType: 'ROOM_CREATE_BLOCKED',
+                        result: 'blocked',
+                        actorId: userId,
+                        details: msg,
+                        level: 'minimal',
+                    });
+                    return;
+                }
+
+                traceEvent(guildId, { userId, action: 'BOT_PERMS_CHECK', result: 'passed', reason: `categoryId=${settings.categoryId}` });
+
+                let roomChannel;
+                try {
+                    traceEvent(guildId, { userId, action: 'CREATE_ROOM_START', result: 'pending', reason: `category=${settings.categoryId}` });
+                    roomChannel = await this.createTempRoom(member, settings);
+                    logger.info({ requestId, userId, lobbyChannelId, roomChannelId: roomChannel.id, step: 'CREATED_NEW_ROOM' }, 'created new room');
+                    traceEvent(guildId, { userId, action: 'CREATE_ROOM_DONE', toChannelId: roomChannel.id, result: 'success' });
+                } catch (error) {
+                    const msg = error instanceof Error ? error.message : String(error);
+                    logger.warn({ error, guildId, userId }, 'Failed to create channel');
+                    traceEvent(guildId, { userId, action: 'CREATE_ROOM_DONE', result: 'error', reason: msg });
+
+                    await this.auditLogService.logEvent(guildId, {
+                        eventType: 'ROOM_CREATE_FAILED',
+                        result: 'failure',
+                        actorId: userId,
+                        details: `Room creation failed: ${msg}`,
+                        level: 'minimal',
+                    });
+                    return;
+                }
+
+                try {
+                    traceEvent(guildId, { userId, action: 'MOVE_MEMBER', toChannelId: roomChannel.id, result: 'pending' });
+                    await member.voice.setChannel(roomChannel);
+                    traceEvent(guildId, { userId, action: 'MOVE_MEMBER', toChannelId: roomChannel.id, result: 'success' });
+                } catch (error) {
+                    const msg = error instanceof Error ? error.message : String(error);
+                    logger.warn({ error, guildId, userId }, 'Failed to move member to new room');
+                    traceEvent(guildId, { userId, action: 'MOVE_MEMBER', toChannelId: roomChannel.id, result: 'error', reason: msg });
+                    await member
+                        .send(`AURA Rooms: Successfully created your channel, but couldn't move you into it automatically. Please join ${roomChannel.toString()}`)
+                        .catch(() => null);
+                }
+
+                try {
+                    await this.permissionService.applyPrivacy(
+                        roomChannel,
+                        settings.defaultPrivacy,
+                        userId,
+                        this.accessRoles(settings),
+                        { locked: false, hidden: false },
+                    );
+                } catch (error) {
+                    logger.warn({ error, channelId: roomChannel.id }, 'Failed to apply final privacy after fast-move');
+                }
+
+                try {
+                    await create({
+                        channelId: roomChannel.id,
+                        guildId,
+                        ownerId: userId,
+                        privacyMode: settings.defaultPrivacy,
+                        userLimit: settings.defaultUserLimit,
+                        autoNameEnabled: true,
+                        locked: false,
+                        hidden: false,
+                    });
+                } catch (error) {
+                    logger.error({ error, channelId: roomChannel.id }, 'Fast-move rollback: DB persist failed');
+                    await this.rollbackCreatedRoom(guildId, roomChannel.id, userId);
+                    return;
+                }
+
+                await this.abuseService.recordCreateSuccess(guildId, userId, settings.createCooldownSeconds, roomChannel.id);
+
+                await this.auditLogService.logEvent(guildId, {
+                    eventType: AuditEventTypes.ROOM_CREATED,
+                    result: 'success',
+                    actorId: userId,
+                    details: `${member.user.tag} created ${roomChannel.toString()}`,
                     level: 'minimal',
                 });
-                return;
-            }
 
-            traceEvent(member.guild.id, { userId: member.id, action: 'BOT_PERMS_CHECK', result: 'passed', reason: `categoryId=${settings.categoryId}` });
+                traceEvent(guildId, { userId, action: 'ROOM_CREATED', toChannelId: roomChannel.id, result: 'success' });
 
-            let roomChannel = null;
-
-            try {
-                traceEvent(member.guild.id, { userId: member.id, action: 'CREATE_ROOM_START', result: 'pending', reason: `category=${settings.categoryId}` });
-                roomChannel = await this.createTempRoom(member, settings);
-                traceEvent(member.guild.id, { userId: member.id, action: 'CREATE_ROOM_DONE', toChannelId: roomChannel.id, result: 'success' });
-            } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
-                logger.warn({ error, guildId: member.guild.id, userId: member.id }, 'Failed to create channel');
-                traceEvent(member.guild.id, { userId: member.id, action: 'CREATE_ROOM_DONE', result: 'error', reason: msg });
-
-                await this.auditLogService.logEvent(member.guild.id, {
-                    eventType: 'ROOM_CREATE_FAILED',
-                    result: 'failure',
-                    actorId: member.id,
-                    details: `Room creation failed: ${msg}`,
-                    level: 'minimal',
+                await this.sendAutoPanel(member, roomChannel).catch((error) => {
+                    logger.warn({ error, channelId: roomChannel.id }, 'Failed to send auto panel');
                 });
-                return;
-            }
-
-            try {
-                traceEvent(member.guild.id, { userId: member.id, action: 'MOVE_MEMBER', toChannelId: roomChannel.id, result: 'pending' });
-                await member.voice.setChannel(roomChannel);
-                traceEvent(member.guild.id, { userId: member.id, action: 'MOVE_MEMBER', toChannelId: roomChannel.id, result: 'success' });
-            } catch (error) {
-                const msg = error instanceof Error ? error.message : String(error);
-                logger.warn({ error, memberId: member.id }, 'Failed to move member to new room');
-                traceEvent(member.guild.id, { userId: member.id, action: 'MOVE_MEMBER', toChannelId: roomChannel.id, result: 'error', reason: msg });
-
-                await member.send(`AURA Rooms: Successfully created your channel, but couldn't move you into it automatically. Please join ${roomChannel.toString()}`).catch(() => null);
-            }
-
-            try {
-                await create({
-                    channelId: roomChannel.id,
-                    guildId: member.guild.id,
-                    ownerId: member.id,
-                    privacyMode: settings.defaultPrivacy,
-                    userLimit: settings.defaultUserLimit,
-                    autoNameEnabled: true,
-                    locked: false,
-                    hidden: false,
-                });
-            } catch (error) {
-                logger.error({ error, channelId: roomChannel.id }, 'Fast-move rollback: DB persist failed');
-                await this.rollbackCreatedRoom(member.guild.id, roomChannel.id, member.id);
-                return;
-            }
-
-            try {
-                await this.permissionService.applyPrivacy(roomChannel, settings.defaultPrivacy, member.id, this.accessRoles(settings), { locked: false, hidden: false });
-            } catch (error) {
-                logger.warn({ error, channelId: roomChannel.id }, 'Failed to apply final privacy after fast-move');
-            }
-
-            await this.abuseService.recordCreateSuccess(member.guild.id, member.id, settings.createCooldownSeconds);
-
-            await this.auditLogService.logEvent(member.guild.id, {
-                eventType: AuditEventTypes.ROOM_CREATED,
-                result: 'success',
-                actorId: member.id,
-                details: `${member.user.tag} created ${roomChannel.toString()}`,
-                level: 'minimal',
             });
+        } finally {
+            this.releaseCreateLock(guildId, userId);
+        }
+    }
 
-            traceEvent(member.guild.id, { userId: member.id, action: 'ROOM_CREATED', toChannelId: roomChannel.id, result: 'success' });
+    async tryReuseExistingOwnerRoom(member, settings) {
+        const ownedRooms = await findByOwner(member.guild.id, member.id);
+        if (ownedRooms.length === 0) return null;
 
-            await this.sendAutoPanel(member, roomChannel).catch((err) =>
-                logger.warn({ error: err, channelId: roomChannel.id }, 'Failed to send auto-panel'),
-            );
-        });
+        for (const room of ownedRooms) {
+            const channel = await this.fetchVoiceChannel(room.channelId);
+            if (!channel) {
+                await deleteRoom(room.channelId).catch(() => false);
+                await clearByChannel(room.channelId).catch(() => null);
+                await this.abuseService.recordRoomDeleted(room.guildId, room.ownerId).catch(() => null);
+                continue;
+            }
+
+            if (settings.categoryId && channel.parentId !== settings.categoryId) {
+                await deleteRoom(room.channelId).catch(() => false);
+                await clearByChannel(room.channelId).catch(() => null);
+                await this.abuseService.recordRoomDeleted(room.guildId, room.ownerId).catch(() => null);
+                continue;
+            }
+
+            if (member.voice.channelId === channel.id) {
+                await this.markRoomActive(channel.id);
+                return channel;
+            }
+
+            const moved = await member.voice.setChannel(channel).then(() => true).catch(() => false);
+            if (!moved) {
+                await member
+                    .send(`AURA Rooms: Your room already exists at ${channel.toString()}. Please join it directly.`)
+                    .catch(() => null);
+                return channel;
+            }
+
+            await this.markRoomActive(channel.id);
+            return channel;
+        }
+
+        return null;
+    }
+
+    async tryReuseRecentCreatedRoom(member, abuseState) {
+        if (!abuseState?.lastCreateAt || !abuseState?.lastCreatedChannelId) return null;
+        const elapsed = Date.now() - abuseState.lastCreateAt.getTime();
+        if (elapsed > RECENT_REUSE_WINDOW_MS) return null;
+
+        const room = await getByChannel(abuseState.lastCreatedChannelId);
+        if (!room || room.ownerId !== member.id || room.guildId !== member.guild.id) return null;
+
+        const channel = await this.fetchVoiceChannel(abuseState.lastCreatedChannelId);
+        if (!channel) return null;
+
+        if (member.voice.channelId !== channel.id) {
+            const moved = await member.voice.setChannel(channel).then(() => true).catch(() => false);
+            if (!moved) return null;
+        }
+
+        await this.markRoomActive(channel.id);
+        return channel;
     }
 
     async createTempRoom(member, settingsOverride) {
@@ -196,8 +333,15 @@ export class RoomService {
                 },
                 {
                     id: member.guild.members.me.id,
-                    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.MoveMembers],
-                }
+                    allow: [
+                        PermissionFlagsBits.ViewChannel,
+                        PermissionFlagsBits.Connect,
+                        PermissionFlagsBits.ManageChannels,
+                        PermissionFlagsBits.MoveMembers,
+                        PermissionFlagsBits.SendMessages,
+                        PermissionFlagsBits.SendMessagesInThreads,
+                    ],
+                },
             ],
         };
 
@@ -242,6 +386,10 @@ export class RoomService {
         this.emptyDeleteDueAt.set(channelId, Date.now() + timeoutMs);
     }
 
+    getDeleteDueAt(channelId) {
+        return this.emptyDeleteDueAt.get(channelId) ?? null;
+    }
+
     async markRoomActive(channelId) {
         this.cancelEmptyDelete(channelId);
         await updateRoomSettings(channelId, { lastActiveAt: new Date() });
@@ -256,13 +404,18 @@ export class RoomService {
 
         if (channel.members.has(room.ownerId)) return;
 
-        const nextOwner = channel.members.find((m) => !m.user.bot);
+        const nextOwner = channel.members.find((member) => !member.user.bot);
         if (!nextOwner) return;
 
         const settings = await ensureDefaults(room.guildId);
-
         await transferOwner(channelId, nextOwner.id);
-        await this.permissionService.applyPrivacy(channel, room.privacyMode, nextOwner.id, this.accessRoles(settings), { locked: room.locked, hidden: room.hidden });
+        await this.permissionService.applyPrivacy(
+            channel,
+            room.privacyMode,
+            nextOwner.id,
+            this.accessRoles(settings),
+            { locked: room.locked, hidden: room.hidden },
+        );
 
         await this.auditLogService.logEvent(room.guildId, {
             eventType: AuditEventTypes.ROOM_TRANSFERRED,
@@ -275,60 +428,125 @@ export class RoomService {
 
     async deleteRoomIfEmpty(channelId) {
         if (this.deletingRoomIds.has(channelId)) return;
-
-        const room = await getByChannel(channelId);
-        if (!room) {
-            this.cancelEmptyDelete(channelId);
-            return;
-        }
-
-        const settings = await ensureDefaults(room.guildId);
-        const channel = await this.fetchVoiceChannel(channelId);
-
-        if (channel && channel.members.size > 0) {
-            this.cancelEmptyDelete(channelId);
-            return;
-        }
-
         this.deletingRoomIds.add(channelId);
 
-        if (channel && settings.categoryId && channel.parentId !== settings.categoryId) {
+        try {
+            const room = await getByChannel(channelId);
+            if (!room) {
+                this.cancelEmptyDelete(channelId);
+                return;
+            }
+
+            const settings = await ensureDefaults(room.guildId);
+            const channel = await this.fetchVoiceChannel(channelId);
+            if (channel && channel.members.size > 0) {
+                this.cancelEmptyDelete(channelId);
+                return;
+            }
+
+            if (channel && (!settings.categoryId || channel.parentId === settings.categoryId)) {
+                try {
+                    await channel.delete('AURA Rooms cleanup for empty temporary room');
+                } catch (error) {
+                    logger.warn({ error, channelId }, 'Failed to delete voice channel, will retry');
+                    await this.scheduleEmptyDelete(channelId, settings.emptyDeleteSeconds ?? Defaults.EMPTY_DELETE_SECONDS);
+                    return;
+                }
+            }
+
             await deleteRoom(channelId);
             await clearByChannel(channelId);
             await this.abuseService.recordRoomDeleted(room.guildId, room.ownerId);
             this.cancelEmptyDelete(channelId);
-            return;
+
+            await this.auditLogService.logEvent(room.guildId, {
+                eventType: AuditEventTypes.ROOM_DELETED,
+                result: 'success',
+                actorId: room.ownerId,
+                details: `Deleted temp room channel ${channelId}`,
+                level: 'minimal',
+            });
+        } finally {
+            this.deletingRoomIds.delete(channelId);
+        }
+    }
+
+    async normalizeDuplicateOwnerRooms() {
+        const rooms = await listAll();
+        const grouped = new Map();
+        const categoryCache = new Map();
+        const summaryByGuild = new Map();
+
+        for (const room of rooms) {
+            const key = `${room.guildId}:${room.ownerId}`;
+            const bucket = grouped.get(key) ?? [];
+            bucket.push(room);
+            grouped.set(key, bucket);
         }
 
-        if (channel) {
-            try {
-                await channel.delete('AURA Rooms cleanup for empty temporary room');
-            } catch (error) {
-                logger.warn({ error, channelId }, 'Failed to delete voice channel, will retry');
-                await this.scheduleEmptyDelete(channelId, 30);
-                return;
+        for (const duplicateRooms of grouped.values()) {
+            if (duplicateRooms.length < 2) continue;
+
+            duplicateRooms.sort((a, b) => {
+                const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                if (aTime !== bTime) return bTime - aTime;
+                const aId = BigInt(a.channelId);
+                const bId = BigInt(b.channelId);
+                if (aId === bId) return 0;
+                return aId > bId ? -1 : 1;
+            });
+
+            const staleRooms = duplicateRooms.slice(1);
+            for (const staleRoom of staleRooms) {
+                let categoryId = categoryCache.get(staleRoom.guildId);
+                if (categoryId === undefined) {
+                    const settings = await ensureDefaults(staleRoom.guildId);
+                    categoryId = settings.categoryId ?? null;
+                    categoryCache.set(staleRoom.guildId, categoryId);
+                }
+
+                const channel = await this.fetchVoiceChannel(staleRoom.channelId);
+                await deleteRoom(staleRoom.channelId).catch(() => false);
+                await clearByChannel(staleRoom.channelId).catch(() => null);
+                await this.abuseService.recordRoomDeleted(staleRoom.guildId, staleRoom.ownerId).catch(() => null);
+
+                let channelsDeleted = 0;
+                if (channel && channel.members.size === 0 && categoryId && channel.parentId === categoryId) {
+                    const deleted = await channel
+                        .delete('AURA Rooms startup duplicate cleanup')
+                        .then(() => true)
+                        .catch(() => false);
+                    if (deleted) channelsDeleted = 1;
+                }
+
+                const summary = summaryByGuild.get(staleRoom.guildId) ?? { staleRecords: 0, staleChannelsDeleted: 0 };
+                summary.staleRecords += 1;
+                summary.staleChannelsDeleted += channelsDeleted;
+                summaryByGuild.set(staleRoom.guildId, summary);
             }
         }
 
-        await deleteRoom(channelId);
-        await clearByChannel(channelId);
-        await this.abuseService.recordRoomDeleted(room.guildId, room.ownerId);
-        this.cancelEmptyDelete(channelId);
-
-        await this.auditLogService.logEvent(room.guildId, {
-            eventType: AuditEventTypes.ROOM_DELETED,
-            result: 'success',
-            actorId: room.ownerId,
-            details: `Deleted temp room channel ${channelId}`,
-            level: 'minimal',
-        });
-
-        setTimeout(() => this.deletingRoomIds.delete(channelId), 10000);
+        for (const [guildId, summary] of summaryByGuild.entries()) {
+            await this.auditLogService.logEvent(guildId, {
+                eventType: 'STARTUP_DUPLICATES_CLEANED',
+                result: 'success',
+                details: `Removed ${summary.staleRecords} stale room records and deleted ${summary.staleChannelsDeleted} empty duplicate channels.`,
+                level: 'minimal',
+            });
+        }
     }
 
     async onStartupOrphanCleanup() {
-        const rooms = await listAll();
+        await this.normalizeDuplicateOwnerRooms();
+        const guilds = this.client.guilds.cache.map((guild) => guild);
+        for (const guild of guilds) {
+            const settings = await ensureDefaults(guild.id).catch(() => null);
+            if (!settings) continue;
+            await this.cleanupUntrackedEmptyRooms(guild, settings);
+        }
 
+        const rooms = await listAll();
         for (const room of rooms) {
             const channel = await this.fetchVoiceChannel(room.channelId);
             if (!channel) {
@@ -351,6 +569,7 @@ export class RoomService {
     async handleBlockedJoin(member, lobbyChannelId, previousChannelId, decision) {
         const reason = decision.message ?? 'Room creation is temporarily blocked.';
         const retry = decision.retryAfterSeconds ? ` Retry in ${decision.retryAfterSeconds}s.` : '';
+        const decisionLabel = humanizeDecisionCode(decision.code);
 
         await member.send(`AURA Rooms: ${reason}${retry}`).catch(() => null);
         await this.tryMoveBack(member, lobbyChannelId, previousChannelId);
@@ -359,7 +578,7 @@ export class RoomService {
             eventType: 'ROOM_CREATE_BLOCKED',
             result: 'blocked',
             actorId: member.id,
-            details: `${member.user.tag} blocked: ${decision.code}`,
+            details: `${member.user.tag} blocked: ${decisionLabel}`,
             level: 'minimal',
         });
     }
@@ -382,7 +601,6 @@ export class RoomService {
         ) return;
 
         if (previous.userLimit > 0 && previous.members.size >= previous.userLimit) return;
-
         await member.voice.setChannel(previous).catch(() => null);
     }
 
@@ -390,11 +608,10 @@ export class RoomService {
         traceEvent(guildId, { userId: ownerId, action: 'ROLLBACK', toChannelId: channelId, result: 'pending' });
 
         const channel = await this.fetchVoiceChannel(channelId);
-
         if (channel) {
             const deleted = await channel.delete('Rollback after creation failure').then(() => true).catch(() => false);
             if (!deleted) {
-                await this.scheduleEmptyDelete(channelId, 30);
+                logger.warn({ guildId, channelId }, 'Rollback channel delete failed for untracked channel');
                 return;
             }
         }
@@ -402,7 +619,6 @@ export class RoomService {
         await deleteRoom(channelId).catch(() => false);
         await clearByChannel(channelId).catch(() => null);
         await this.abuseService.recordRoomDeleted(guildId, ownerId).catch(() => null);
-
         traceEvent(guildId, { userId: ownerId, action: 'ROLLBACK', toChannelId: channelId, result: 'done' });
     }
 
@@ -421,33 +637,91 @@ export class RoomService {
         if (!room) return;
 
         const settings = await ensureDefaults(member.guild.id);
-        const interfaceChannel = member.guild.channels.cache.get(settings.interfaceChannelId);
-
+        const interfaceChannel = settings.interfaceChannelId
+            ? member.guild.channels.cache.get(settings.interfaceChannelId)
+            : null;
         const templates = this.templateService
             ? await this.templateService.listTemplates(member.guild.id, member.id)
             : [];
         const canClaim = canClaimRoom(member, roomChannel, room.ownerId);
 
-        const embed = await buildRoomPanelEmbed(room, roomChannel);
-        const components = await buildRoomPanelComponents({ room, channel: roomChannel, templates, canClaim });
+        const rendered = renderAuraInterface({
+            room,
+            channel: roomChannel,
+            templates,
+            canClaim,
+            state: { view: 'main', selectedTemplate: null },
+        });
+
+        const deliveryChannels = [];
+        deliveryChannels.push(roomChannel);
+        if (interfaceChannel && interfaceChannel.type === ChannelType.GuildText && interfaceChannel.id !== roomChannel.id) {
+            deliveryChannels.push(interfaceChannel);
+        }
+
+        const updatePayload = {
+            embeds: [rendered.embed],
+            components: rendered.components,
+        };
 
         let message = null;
-        if (interfaceChannel && interfaceChannel.type === ChannelType.GuildText) {
-            message = await interfaceChannel.send({
-                content: `<@${member.id}> Your room is ready.`,
-                embeds: [embed],
-                components,
-            }).catch(() => null);
-        } else {
-            message = await roomChannel.send({
-                content: `<@${member.id}> Welcome to your room. Use the controls below to manage it.`,
-                embeds: [embed],
-                components,
-            }).catch(() => null);
+        if (room.panelMessageId) {
+            for (const channel of deliveryChannels) {
+                if (!channel?.isTextBased?.()) continue;
+                const existing = await channel.messages.fetch(room.panelMessageId).catch(() => null);
+                if (!existing) continue;
+                const edited = await existing.edit(updatePayload).then(() => true).catch(() => false);
+                if (!edited) continue;
+                message = existing;
+                break;
+            }
+        }
+
+        if (!message) {
+            for (const channel of deliveryChannels) {
+                if (!channel?.isTextBased?.()) continue;
+                message = await channel.send(updatePayload).catch(() => null);
+                if (message) break;
+            }
         }
 
         if (message) {
             await updateRoomSettings(room.channelId, { panelMessageId: message.id });
+        }
+    }
+
+    async cleanupUntrackedEmptyRooms(guild, settingsOverride) {
+        const settings = settingsOverride ?? await ensureDefaults(guild.id);
+        if (!settings.categoryId) return;
+
+        const trackedRooms = await listAll();
+        const trackedIds = new Set(
+            trackedRooms
+                .filter((room) => room.guildId === guild.id)
+                .map((room) => room.channelId),
+        );
+
+        const candidates = guild.channels.cache.filter((channel) =>
+            channel.type === ChannelType.GuildVoice &&
+            channel.parentId === settings.categoryId &&
+            channel.name !== '➕ Create Room' &&
+            !trackedIds.has(channel.id),
+        );
+
+        for (const channel of candidates.values()) {
+            if (channel.members.size > 0) {
+                logger.info({ guildId: guild.id, channelId: channel.id }, 'Skipping occupied untracked room');
+                continue;
+            }
+
+            const deleted = await channel
+                .delete('AURA Rooms cleanup for untracked empty room')
+                .then(() => true)
+                .catch(() => false);
+
+            if (deleted) {
+                logger.info({ guildId: guild.id, channelId: channel.id }, 'Deleted untracked empty room');
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import { get as getGuildSettings } from '../../db/repos/guildSettingsRepo.js';
 import { list as listLobbies } from '../../db/repos/lobbyRepo.js';
 import { getTraceEvents } from '../../utils/voiceTracer.js';
 import { PurpleOS } from '../../ui/theme.js';
+import { humanizeEventKey, humanizeKey } from '../../utils/humanize.js';
 
 export const debugCommand = {
     data: new SlashCommandBuilder()
@@ -43,13 +44,13 @@ async function handleDebugVoice(interaction) {
         if (cat) {
             const perms = me.permissionsIn(cat);
             categoryPerms = [
-                perms.has(PermissionFlagsBits.ManageChannels) ? '✅ ManageChannels' : '❌ ManageChannels',
-                perms.has(PermissionFlagsBits.ViewChannel) ? '✅ ViewChannel' : '❌ ViewChannel',
-                perms.has(PermissionFlagsBits.Connect) ? '✅ Connect' : '❌ Connect',
-                perms.has(PermissionFlagsBits.MoveMembers) ? '✅ MoveMembers' : '❌ MoveMembers',
+                perms.has(PermissionFlagsBits.ManageChannels) ? '\u2705 Manage Channels' : '\u274c Manage Channels',
+                perms.has(PermissionFlagsBits.ViewChannel) ? '\u2705 View Channel' : '\u274c View Channel',
+                perms.has(PermissionFlagsBits.Connect) ? '\u2705 Connect' : '\u274c Connect',
+                perms.has(PermissionFlagsBits.MoveMembers) ? '\u2705 Move Members' : '\u274c Move Members',
             ].join('\n');
         } else {
-            categoryPerms = '⚠️ Category not in cache';
+            categoryPerms = '\u26a0\ufe0f Category not in cache';
         }
     }
 
@@ -59,31 +60,44 @@ async function handleDebugVoice(interaction) {
         if (lobbyChannel) {
             const perms = me.permissionsIn(lobbyChannel);
             lobbyPerms = [
-                perms.has(PermissionFlagsBits.ViewChannel) ? '✅ ViewChannel' : '❌ ViewChannel',
-                perms.has(PermissionFlagsBits.Connect) ? '✅ Connect' : '❌ Connect',
-                perms.has(PermissionFlagsBits.MoveMembers) ? '✅ MoveMembers' : '❌ MoveMembers',
+                perms.has(PermissionFlagsBits.ViewChannel) ? '\u2705 View Channel' : '\u274c View Channel',
+                perms.has(PermissionFlagsBits.Connect) ? '\u2705 Connect' : '\u274c Connect',
+                perms.has(PermissionFlagsBits.MoveMembers) ? '\u2705 Move Members' : '\u274c Move Members',
             ].join('\n');
         } else {
-            lobbyPerms = '⚠️ Lobby channel not in cache';
+            lobbyPerms = '\u26a0\ufe0f Lobby channel not in cache';
         }
     }
 
     const eventLines = events.length > 0
-        ? events.map((e) => `\`${e.ts.slice(11, 19)}\` **${e.action}** → ${e.result}${e.reason ? ` (${e.reason})` : ''}`).join('\n')
+        ? events
+            .map((e) => {
+                const action = humanizeEventKey(e.action);
+                const result = humanizeKey(e.result);
+                const reason = e.reason ? ` (${humanizeEventKey(e.reason)})` : '';
+                return `\`${e.ts.slice(11, 19)}\` **${action}** \u2192 ${result}${reason}`;
+            })
+            .join('\n')
         : '`No events recorded yet.`';
 
     const embed = new EmbedBuilder()
-        .setColor(PurpleOS.Colors.PRIMARY)
-        .setTitle(`${PurpleOS.Icons.GEAR} AURA Debug • Voice`)
+        .setColor(PurpleOS.Colors.PURPLEOS_PRIMARY)
+        .setTitle(`${PurpleOS.Icons.GEAR} AURA Debug Voice`)
         .addFields(
             { name: 'Guild ID', value: `\`${guild.id}\``, inline: true },
-            { name: 'Category ID', value: settings?.categoryId ? `\`${settings.categoryId}\`` : '`not set`', inline: true },
-            { name: 'Log Channel', value: settings?.logChannelId ? `\`${settings.logChannelId}\`` : '`not set`', inline: true },
-            { name: 'Interface Channel', value: settings?.interfaceChannelId ? `\`${settings.interfaceChannelId}\`` : '`not set`', inline: true },
-            { name: 'Registered Lobbies', value: lobbyIds.length > 0 ? lobbyIds.map((id) => `\`${id}\``).join('\n') : '`none`', inline: false },
-            { name: 'Your Voice Channel', value: currentVoiceChannel ? `\`${currentVoiceChannel}\` ${isInLobby ? '✅ IS a lobby' : '❌ NOT a lobby'}` : '`not in voice`', inline: false },
-            { name: 'Bot → Category Perms', value: categoryPerms, inline: true },
-            { name: 'Bot → Lobby Perms', value: lobbyPerms, inline: true },
+            { name: 'Category ID', value: settings?.categoryId ? `\`${settings.categoryId}\`` : '`Not set`', inline: true },
+            { name: 'Log Channel', value: settings?.logChannelId ? `\`${settings.logChannelId}\`` : '`Not set`', inline: true },
+            { name: 'Interface Channel', value: settings?.interfaceChannelId ? `\`${settings.interfaceChannelId}\`` : '`Not set`', inline: true },
+            { name: 'Registered Lobbies', value: lobbyIds.length > 0 ? lobbyIds.map((id) => `\`${id}\``).join('\n') : '`None`', inline: false },
+            {
+                name: 'Your Voice Channel',
+                value: currentVoiceChannel
+                    ? `\`${currentVoiceChannel}\` ${isInLobby ? '\u2705 Is a lobby' : '\u274c Not a lobby'}`
+                    : '`Not in voice`',
+                inline: false,
+            },
+            { name: 'Bot to Category Perms', value: categoryPerms, inline: true },
+            { name: 'Bot to Lobby Perms', value: lobbyPerms, inline: true },
             { name: `Last ${events.length} Voice Events`, value: eventLines, inline: false },
         )
         .setFooter({ text: Branding.FOOTER })

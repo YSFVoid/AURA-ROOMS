@@ -1,6 +1,7 @@
 import { Defaults } from '../config/constants.js';
 import { get as getGuildSettings } from '../db/repos/guildSettingsRepo.js';
 import { createInfoEmbed } from '../ui/embeds.js';
+import { humanizeEventKey, humanizeKey } from '../utils/humanize.js';
 import { logger } from '../utils/logger.js';
 
 function shouldEmit(level, configured) {
@@ -23,20 +24,21 @@ export class AuditLogService {
         const configuredLevel = settings?.logVerbosity ?? Defaults.LOG_VERBOSITY;
         const level = event.level ?? 'normal';
         const eventType = event.eventType ?? event.action ?? 'EVENT';
+        const eventLabel = humanizeEventKey(eventType);
 
         if (!shouldEmit(level, configuredLevel)) return;
 
         const fields = [...(event.fields ?? [])];
-        fields.push({ name: 'Event', value: eventType, inline: true });
+        fields.push({ name: 'Event', value: eventLabel, inline: true });
         if (event.actorId) fields.push({ name: 'Actor', value: `<@${event.actorId}>`, inline: true });
         if (event.requestId) fields.push({ name: 'Request ID', value: `\`${event.requestId}\``, inline: true });
-        fields.push({ name: 'Result', value: event.result, inline: true });
+        fields.push({ name: 'Result', value: humanizeKey(event.result ?? 'unknown'), inline: true });
 
         const actionValue = event.action ?? eventType;
-        fields.push({ name: 'Action', value: actionValue, inline: true });
+        fields.push({ name: 'Action', value: humanizeEventKey(actionValue), inline: true });
 
         const description = event.details ?? 'No additional details';
-        await this.send(guildId, `Security: ${eventType}`, description, fields);
+        await this.send(guildId, `Security: ${eventLabel}`, description, fields);
     }
 
     async send(guildId, title, description, fields) {
