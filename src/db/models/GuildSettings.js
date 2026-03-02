@@ -62,6 +62,13 @@ const guildSettingsSchema = new Schema(
             required: true,
             default: 'normal',
         },
+        presetsMode: {
+            type: String,
+            enum: ['off', 'adminsOnly', 'everyone'],
+            required: true,
+            default: 'everyone',
+        },
+        musicEnabled: { type: Boolean, default: false },
         setupCompletedAt: { type: Date },
     },
     { timestamps: true, strict: true },

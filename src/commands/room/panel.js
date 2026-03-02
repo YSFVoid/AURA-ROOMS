@@ -42,6 +42,8 @@ const CompatIds = {
     permissions: [AuraPanelIds.PERMISSIONS],
     note: [AuraPanelIds.NOTE],
     kick: [AuraPanelIds.KICK, AuraPanelIds.KICK_VIEW],
+    tools: [AuraPanelIds.TOOLS],
+    music: [AuraPanelIds.MUSIC],
     backMain: [AuraPanelIds.BACK_MAIN, AuraPanelIds.BACK_VIEW],
     privacySelect: [AuraPanelIds.PRIVACY_SELECT, ComponentIds.ROOM_PRIVACY_SELECT],
     kickSelect: [AuraPanelIds.KICK_SELECT, ComponentIds.ROOM_KICK_SELECT],
@@ -582,6 +584,28 @@ export const roomButtonHandlers = [
             assertScope(context, 'full');
             await finalizeAction(interaction, appContext, context, 'Templates', 'Select a template below', {
                 view: 'templates',
+                selectedTemplate: null,
+            });
+        },
+    },
+    {
+        customId: matchesIds(...CompatIds.tools),
+        async execute(interaction, appContext) {
+            const context = await getRoomContext(interaction);
+            assertScope(context, 'moderation');
+            await finalizeAction(interaction, appContext, context, 'Tools', 'Admin tools and room health', {
+                view: 'admin',
+                selectedTemplate: null,
+            });
+        },
+    },
+    {
+        customId: matchesIds(...CompatIds.music),
+        async execute(interaction, appContext) {
+            const context = await getRoomContext(interaction);
+            assertScope(context, 'full');
+            await finalizeAction(interaction, appContext, context, 'Music', 'Music controls', {
+                view: 'music',
                 selectedTemplate: null,
             });
         },

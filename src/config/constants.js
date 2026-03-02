@@ -122,6 +122,8 @@ export const AuraPanelIds = {
     INFO: 'aura:info',
     BACK_MAIN: 'aura:back:main',
     BACK_VIEW: 'aura:view:back',
+    TOOLS: 'aura:tools',
+    MUSIC: 'aura:music',
 
     PRIVACY_SELECT: 'aura:privacy:select',
     KICK_SELECT: 'aura:kick:select',
