@@ -18,6 +18,7 @@ import { logger } from '../utils/logger.js';
 import { traceEvent } from '../utils/voiceTracer.js';
 import { renderAuraInterface } from '../ui/auraInterface.js';
 import { canClaimRoom } from '../utils/permissions.js';
+import { acquireLock, releaseLock } from '../db/repos/createLockRepo.js';
 
 const RECENT_REUSE_WINDOW_MS = 10_000;
 const LOBBY_DEBOUNCE_MS = 1500;
@@ -79,6 +80,13 @@ export class RoomService {
             return;
         }
 
+        const dbLocked = await acquireLock(guildId, userId, 12000);
+        if (!dbLocked) {
+            logger.info({ requestId, userId, step: 'SKIP_LOCKED_DB' }, 'another process holds the lock');
+            traceEvent(guildId, { userId, action: 'SKIP_LOCKED_DB', result: 'skipped' });
+            return;
+        }
+
         let resolveInflight;
         const inflightPromise = new Promise((resolve) => { resolveInflight = resolve; });
         this.inflightCreate.set(flightKey, inflightPromise);
@@ -89,6 +97,7 @@ export class RoomService {
         } finally {
             resolveInflight(createdChannelId);
             this.inflightCreate.delete(flightKey);
+            await releaseLock(guildId, userId);
         }
     }
 

@@ -252,7 +252,7 @@ export function createRoomTemplateRow(options) {
 export function createAuraIconButton({ customId, icon, style = ButtonStyle.Secondary, disabled = false }) {
     return new ButtonBuilder()
         .setCustomId(customId)
-        .setLabel(icon)
+        .setEmoji(icon)
         .setStyle(style)
         .setDisabled(disabled);
 }
